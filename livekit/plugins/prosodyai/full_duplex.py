@@ -51,6 +51,16 @@ from .wire import (
     KIND_IDENTITY,
     KIND_TEXT,
     KIND_TRANSCRIPT,
+    ConversationBargeInEvent as BargeInEvent,
+    ConversationStateDeltaEvent as StateDeltaEvent,
+    ConversationTurnBoundaryEvent as TurnBoundaryEvent,
+    ConversationWireEvent as ConversationEvent,
+    GatewayAgentToolEvent as AgentToolEvent,
+    GatewayAgentToolStatusEvent as AgentToolStatusEvent,
+    GatewayIdentityResolvedEvent as IdentityResolvedEvent,
+    GatewayModelEvent as ModelEvent,
+    GatewayNewSpeakerEvent as NewSpeakerEvent,
+    GatewaySpeakerChangeEvent as SpeakerChangeEvent,
     IdentityEvent,
     TextEvent,
     TranscriptDelta,
@@ -59,36 +69,6 @@ from .wire import (
     parse_gateway_model_event,
     parse_identity_payload,
     parse_transcript_payload,
-)
-from .wire import (
-    ConversationBargeInEvent as BargeInEvent,
-)
-from .wire import (
-    ConversationStateDeltaEvent as StateDeltaEvent,
-)
-from .wire import (
-    ConversationTurnBoundaryEvent as TurnBoundaryEvent,
-)
-from .wire import (
-    ConversationWireEvent as ConversationEvent,
-)
-from .wire import (
-    GatewayAgentToolEvent as AgentToolEvent,
-)
-from .wire import (
-    GatewayAgentToolStatusEvent as AgentToolStatusEvent,
-)
-from .wire import (
-    GatewayIdentityResolvedEvent as IdentityResolvedEvent,
-)
-from .wire import (
-    GatewayModelEvent as ModelEvent,
-)
-from .wire import (
-    GatewayNewSpeakerEvent as NewSpeakerEvent,
-)
-from .wire import (
-    GatewaySpeakerChangeEvent as SpeakerChangeEvent,
 )
 
 __all__ = [

@@ -14,8 +14,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit, urlunsplit
 
 import numpy as np
-from websockets.asyncio.client import ClientConnection
-from websockets.asyncio.client import connect as ws_connect
+from websockets.asyncio.client import ClientConnection, connect as ws_connect
 
 if TYPE_CHECKING:
     import sphn
