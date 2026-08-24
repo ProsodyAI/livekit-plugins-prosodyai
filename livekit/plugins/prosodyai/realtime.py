@@ -20,6 +20,7 @@ from livekit.agents.types import NOT_GIVEN, NotGivenOr
 
 from .full_duplex import (
     GATEWAY_SAMPLE_RATE,
+    ConversationEvent,
     FullDuplexBridge,
     FullDuplexBridgeConfig,
     GatewayConnection,
@@ -39,6 +40,7 @@ from .wire import WireEventType
 _PUBLISH_FRAME_BYTES = (GATEWAY_SAMPLE_RATE * 20 // 1000) * 2
 
 __all__ = [
+    "ConversationEvent",
     "IdentityEvent",
     "IdentityResolvedEvent",
     "ModelEvent",
@@ -61,6 +63,11 @@ class SessionEventType(WireEventType):
     TEXT = "prosody_text"
     TRANSCRIPT = "prosody_transcript"
     EVENT = "prosody_event"
+    #: The learned deciders' commitments: state deltas, turn boundaries,
+    #: barge-ins, and entity spans. Its own name because the wire keeps this
+    #: family in its own union, and an app that wants dictated entities should
+    #: not have to sort them out of the speaker tracker's events.
+    CONVERSATION = "prosody_conversation"
 
 
 EventTypes = Literal[
@@ -68,6 +75,7 @@ EventTypes = Literal[
     "prosody_text",
     "prosody_transcript",
     "prosody_event",
+    "prosody_conversation",
 ]
 
 
@@ -234,6 +242,8 @@ class RealtimeSession(llm.RealtimeSession[EventTypes]):
             self.emit(SessionEventType.EVENT.value, event)
         elif isinstance(event, IdentityEvent):
             self.emit(SessionEventType.IDENTITY.value, event)
+        elif isinstance(event, ConversationEvent):
+            self.emit(SessionEventType.CONVERSATION.value, event)
 
     def _on_transcript(self, event: TranscriptEvent) -> None:
         """Relay one committed span of caller words, twice: ``prosody_transcript``

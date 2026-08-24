@@ -32,6 +32,7 @@ from livekit.plugins.prosodyai.realtime import (
     TextEvent,
     TranscriptEvent,
 )
+from livekit.plugins.prosodyai import EntitySpanEvent
 
 ROOM_SAMPLE_RATE = 16_000
 FRAME_SAMPLES = ROOM_SAMPLE_RATE * 20 // 1000  # 20 ms room frames
@@ -67,6 +68,18 @@ SPEAKER_CHANGE = {
 }
 
 
+# The other family on the 0x06 channel: a committed entity span, the shape a
+# dictated email arrives in. It carries no ``prosodyai.`` prefix, so the
+# gateway-tracker parse declines it and the conversation parse claims it.
+ENTITY_SPAN = {
+    "type": "entity_span",
+    "frame_ms": 5200,
+    "commit_ms": 5600,
+    "duration_ms": 1840,
+    "kind": "email",
+}
+
+
 async def _fake_gateway(websocket) -> None:
     await websocket.send(bytes([KIND_HANDSHAKE]))
     responded = False
@@ -81,6 +94,7 @@ async def _fake_gateway(websocket) -> None:
         await websocket.send(bytes([KIND_IDENTITY]) + json.dumps(IDENTITY).encode("utf-8"))
         await websocket.send(bytes([KIND_TRANSCRIPT]) + json.dumps(TRANSCRIPT).encode("utf-8"))
         await websocket.send(bytes([KIND_EVENT]) + json.dumps(SPEAKER_CHANGE).encode("utf-8"))
+        await websocket.send(bytes([KIND_EVENT]) + json.dumps(ENTITY_SPAN).encode("utf-8"))
         clock = np.arange(4 * GATEWAY_FRAME_SAMPLES, dtype=np.float32) / GATEWAY_SAMPLE_RATE
         tone = 0.2 * np.sin(2.0 * np.pi * 440.0 * clock).astype(np.float32)
         for index in range(4):
@@ -115,11 +129,13 @@ async def test_full_duplex_session_against_the_wire_protocol(monkeypatch):
         tokens: asyncio.Queue = asyncio.Queue()
         transcripts: asyncio.Queue = asyncio.Queue()
         model_events: asyncio.Queue = asyncio.Queue()
+        conversation_events: asyncio.Queue = asyncio.Queue()
         session.on("generation_created", generations.put_nowait)
         session.on("prosody_identity", identities.put_nowait)
         session.on("prosody_text", tokens.put_nowait)
         session.on("prosody_transcript", transcripts.put_nowait)
         session.on("prosody_event", model_events.put_nowait)
+        session.on("prosody_conversation", conversation_events.put_nowait)
 
         # ~400 ms of room audio: enough for the bridge to fill several 80 ms
         # model frames and the fake gateway to answer.
@@ -173,6 +189,19 @@ async def test_full_duplex_session_against_the_wire_protocol(monkeypatch):
         assert change.previous_speaker_id is None
         assert change.display_name == "Ada"
         assert change.is_agent is False
+
+        # The conversation family rides the same 0x06 channel and reaches its
+        # own name, so an app hears the dictated entity without filtering the
+        # tracker's events out of the way.
+        span: EntitySpanEvent = await asyncio.wait_for(
+            conversation_events.get(), timeout=10.0
+        )
+        assert isinstance(span, EntitySpanEvent)
+        assert span.kind == "email"
+        assert span.frame_ms == 5200
+        assert span.commit_ms == 5600
+        assert span.duration_ms == 1840
+        assert model_events.empty(), "a conversation event must not reach prosody_event"
 
         await session.aclose()
         await model.aclose()
