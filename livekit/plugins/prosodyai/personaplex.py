@@ -147,8 +147,6 @@ class PersonaPlexBackend:
                 "sphn is required for Opus bridging "
                 "(pip install 'livekit-plugins-prosodyai[duplex]')"
             ) from exc
-        self._writer = sphn.OpusStreamWriter(GATEWAY_SAMPLE_RATE)
-        self._reader = sphn.OpusStreamReader(GATEWAY_SAMPLE_RATE)
         connect_ctx = ws_connect(
             self._url,
             additional_headers={API_KEY_HEADER: self._api_key},
@@ -157,27 +155,38 @@ class PersonaPlexBackend:
             # Client pings stay disabled: uplink audio is the liveness signal.
             ping_interval=None,
         )
-        self._socket = await connect_ctx.__aenter__()
+        socket = await connect_ctx.__aenter__()
+        # The codec state comes up with the socket, so a connect that fails
+        # strands no Opus buffers and a reopened backend starts clean.
+        self._socket = socket
         self._connect_ctx = connect_ctx
+        self._writer = sphn.OpusStreamWriter(GATEWAY_SAMPLE_RATE)
+        self._reader = sphn.OpusStreamReader(GATEWAY_SAMPLE_RATE)
+        self._pending_uplink = np.zeros(0, dtype=np.float32)
 
     async def send_audio(self, samples: np.ndarray) -> None:
         """Pack caller float32 onto the gateway's 80 ms grid and stream it as Opus."""
-        if self._socket is None or self._writer is None:
+        # Bound once: sending awaits, and a close in between drops both.
+        socket, writer = self._socket, self._writer
+        if socket is None or writer is None:
             return
         self._pending_uplink = np.concatenate([self._pending_uplink, samples])
         while self._pending_uplink.shape[0] >= GATEWAY_FRAME_SAMPLES:
             block = self._pending_uplink[:GATEWAY_FRAME_SAMPLES]
             self._pending_uplink = self._pending_uplink[GATEWAY_FRAME_SAMPLES:]
-            packet = self._writer.append_pcm(block)
+            packet = writer.append_pcm(block)
             if packet:
-                await self._socket.send(bytes([KIND_AUDIO]) + packet)
+                await socket.send(bytes([KIND_AUDIO]) + packet)
 
     async def receive(self) -> AsyncIterator[SpeechItem | GatewayControlFrame]:
         """Yield the socket's downlink in arrival order; frames beyond
         handshake, audio, and text arrive as :class:`GatewayControlFrame`."""
-        if self._socket is None or self._reader is None:
+        # Bound once: the generator holds the stream it decodes for its own
+        # run, so a close mid-iteration ends the loop instead of tripping it.
+        socket, reader = self._socket, self._reader
+        if socket is None or reader is None:
             return
-        async for message in self._socket:
+        async for message in socket:
             if isinstance(message, str) or not message:
                 continue
             kind = message[0]
@@ -189,7 +198,7 @@ class PersonaPlexBackend:
                 yield SpeechText(text=payload.decode("utf-8", errors="replace"))
                 continue
             if kind == KIND_AUDIO:
-                pcm = self._reader.append_bytes(payload)
+                pcm = reader.append_bytes(payload)
                 if pcm is None or pcm.size == 0:
                     continue
                 yield SpeechAudio(samples=np.asarray(pcm, dtype=np.float32).reshape(-1))
@@ -199,5 +208,11 @@ class PersonaPlexBackend:
     async def close(self) -> None:
         connect_ctx, self._connect_ctx = self._connect_ctx, None
         self._socket = None
+        # The Opus streams are native allocations and the accumulator holds up
+        # to one frame of caller audio; a closed session keeps none of it, so a
+        # worker that takes call after call does not carry them all.
+        self._writer = None
+        self._reader = None
+        self._pending_uplink = np.zeros(0, dtype=np.float32)
         if connect_ctx is not None:
             await connect_ctx.__aexit__(None, None, None)

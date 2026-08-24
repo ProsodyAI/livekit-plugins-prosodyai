@@ -109,8 +109,9 @@ class RealtimeModel(llm.RealtimeModel):
 
     @property
     def sessions(self) -> list["RealtimeSession"]:
-        """Sessions created so far: how a worker reaches the identity events
-        after handing the model to an ``AgentSession``."""
+        """The model's open sessions, in the order they opened: how a worker
+        reaches the identity events after handing the model to an
+        ``AgentSession``. A session leaves this list when it closes."""
         return list(self._sessions)
 
     def session(self, *, turn_detection_disabled: bool = False) -> "RealtimeSession":
@@ -120,9 +121,21 @@ class RealtimeModel(llm.RealtimeModel):
         self._sessions.append(sess)
         return sess
 
+    def _forget(self, session: "RealtimeSession") -> None:
+        """Drop one closed session.
+
+        A model outlives its sessions (one worker process takes call after
+        call), so a closed session left on this list holds its channels, its
+        bridge, and whatever audio never drained for the life of the worker.
+        """
+        try:
+            self._sessions.remove(session)
+        except ValueError:
+            pass
+
     async def aclose(self) -> None:
-        await asyncio.gather(*(sess.aclose() for sess in self._sessions), return_exceptions=True)
-        self._sessions.clear()
+        sessions, self._sessions = self._sessions, []
+        await asyncio.gather(*(sess.aclose() for sess in sessions), return_exceptions=True)
 
 
 class RealtimeSession(llm.RealtimeSession[EventTypes]):
@@ -348,3 +361,8 @@ class RealtimeSession(llm.RealtimeSession[EventTypes]):
             await asyncio.gather(self._bridge_task, return_exceptions=True)
         self._audio_ch.close()
         self._text_ch.close()
+        # Nothing here outlives the call: the bridge holds the backend, and the
+        # model holds this session until it hears the session is done.
+        self._bridge = None
+        self._bridge_task = None
+        self._model._forget(self)

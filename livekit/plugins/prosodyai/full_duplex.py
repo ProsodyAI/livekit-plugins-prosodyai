@@ -184,6 +184,26 @@ class FullDuplexBridgeConfig:
         return {API_KEY_HEADER: self.api_key}
 
 
+async def _session_lifetime(
+    *, send_task: asyncio.Task[None], receive_task: asyncio.Task[None]
+) -> None:
+    """Wait out one session: the downlink's close, or either half's failure.
+
+    The downlink is the session's life, so an uplink that simply runs out of
+    room audio does not end it. An uplink that *fails* does: a handshake that
+    never lands leaves the downlink waiting on a socket that will never
+    speak, and awaiting the downlink alone sent that error out with the
+    cancel, so a call that never bound looked like a clean hangup.
+    """
+    pending = {send_task, receive_task}
+    while pending:
+        done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+        for task in done:
+            task.result()
+            if task is receive_task:
+                return
+
+
 class FullDuplexBridge:
     """Mix-friendly duplex session: PCM16 uplink in, PCM16 downlink out + events."""
 
@@ -288,17 +308,22 @@ class FullDuplexBridge:
         ``uplink_pcm16`` yields little-endian mono PCM16 at ``room_sample_rate``
         (typically 20 ms LiveKit frames). Downlink PCM is also LE mono PCM16 at
         ``publish_sample_rate``.
+
+        Returns when the downlink closes, and raises whichever half failed.
         """
         await self._backend.open(self._session_config)
+        send_task = asyncio.create_task(self._send_uplink(uplink_pcm16), name="duplex-uplink")
+        receive_task = asyncio.create_task(
+            self._receive_downlink(on_downlink_pcm16=on_downlink_pcm16, on_event=on_event),
+            name="duplex-downlink",
+        )
         try:
-            send_task = asyncio.create_task(self._send_uplink(uplink_pcm16), name="duplex-uplink")
-            try:
-                await self._receive_downlink(on_downlink_pcm16=on_downlink_pcm16, on_event=on_event)
-            finally:
-                self._closed = True
-                send_task.cancel()
-                await asyncio.gather(send_task, return_exceptions=True)
+            await _session_lifetime(send_task=send_task, receive_task=receive_task)
         finally:
+            self._closed = True
+            send_task.cancel()
+            receive_task.cancel()
+            await asyncio.gather(send_task, receive_task, return_exceptions=True)
             await self._backend.close()
 
     def close(self) -> None:
