@@ -13,7 +13,9 @@ here.
 2. The gateway wire: kind-tagged frames on the caller socket, serialized by
    the API gateway and parsed by consumers (the LiveKit plugin, the website,
    the CLI probes). Fields speak the caller's vocabulary: ``timestamp_ms``,
-   ``session_id``, and the lane label ``speaker_id`` (``speaker_<lane>``).
+   ``session_id``, and ``speaker_id``, the session-local surface emitted by
+   Sortformer. The integer model ``lane`` is a separate identity/state scope;
+   its number does not derive or identify a gateway ``speaker_id``.
 
 The bytes of both wires are frozen. Consumers align to the wire, and a
 rename lands here before it lands anywhere else. Every field is a committed
@@ -70,7 +72,12 @@ KIND_EVENT = 0x06
 
 
 def speaker_label(lane: int) -> str:
-    """The gateway's public label for one identity lane."""
+    """Serialize one integer identity/state lane as its stable internal key.
+
+    This compatibility helper does not identify a session-local Sortformer
+    speaker. A public ``speaker_id`` comes from diarization and must be bound
+    to identity state explicitly.
+    """
     return f"speaker_{lane}"
 
 
@@ -227,12 +234,13 @@ class TrackerEventType(WireEventType):
 
 @dataclass(frozen=True)
 class TrackerSpeakerChangeEvent(WireShape):
-    """The outer recurrence committed the floor to a different lane.
+    """The outer recurrence committed identity state to a different lane.
 
-    ``frame_ms`` is retrodictive: it points at the segment's onset on the
-    model's frame clock, while the commit itself lands when the segment
-    closes (or when a held segment resolves late). The latency between the
-    two is the model's business.
+    ``lane`` and ``previous_lane`` are identity/state scopes, not Sortformer
+    speaker suffixes. ``frame_ms`` is retrodictive: it points at the segment's
+    onset on the model's frame clock, while the commit itself lands when the
+    segment closes (or when a held segment resolves late). The latency between
+    the two is the model's business.
     """
 
     TYPE: ClassVar[TrackerEventType] = TrackerEventType.SPEAKER_CHANGE
@@ -246,7 +254,7 @@ class TrackerSpeakerChangeEvent(WireShape):
 
 @dataclass(frozen=True)
 class TrackerNewSpeakerEvent(WireShape):
-    """The outer recurrence opened a state lane for a new voice."""
+    """The outer recurrence opened a new identity/state lane."""
 
     TYPE: ClassVar[TrackerEventType] = TrackerEventType.NEW_SPEAKER
 
@@ -385,13 +393,14 @@ the learned event deciders with carried state. The model is the only author."""
 
 
 # ---------------------------------------------------------------------------
-# The identity timeline: one model-owned history of who spoke when.
+# The identity timeline: one model-owned history of identity/state decisions.
 #
-# Diarization is the identity-state timeline. The deployment's tracker commits
-# each frame to a lane, a new lane, or hold, and the ordered sequence of those
-# commitments is the product's diarization. These shapes are the canonical
-# readout: every surface (live events, session export, batch response)
-# derives from them.
+# Sortformer diarization and identity state are separate timelines. Sortformer
+# supplies the session-local speaker surface. The identity tracker commits an
+# audio span to an integer state lane, a new lane, or hold. These shapes are
+# the canonical identity/state readout. A consumer may associate a lane with a
+# Sortformer surface only through an explicit binding; matching suffixes are
+# not a join.
 
 
 IDENTITY_TIMELINE_SCHEMA_VERSION = 1
@@ -413,10 +422,11 @@ class IdentitySpan(WireShape):
     retrodictive when the segment closed (or a hold resolved) after the fact;
     ``commit_ms`` is where the verdict landed on the model's frame clock. A
     HOLD span carries ``lane`` for the candidate under test while keeping
-    ``speaker_id`` null, because a hold attributes nothing. ``late_resolved``
-    marks a span whose commitment arrived after its audio span closed, and
-    ``unique_voice`` marks a minted lane the tracker will not merge into an
-    existing one.
+    ``speaker_id`` null, because a hold attributes nothing. When present,
+    ``speaker_id`` is an explicitly bound session-local Sortformer surface; it
+    is never derived from ``lane``. ``late_resolved`` marks a span whose
+    commitment arrived after its audio span closed, and ``unique_voice`` marks
+    a minted lane the tracker will not merge into an existing one.
     """
 
     start_ms: int
@@ -433,11 +443,13 @@ class IdentitySpan(WireShape):
 class IdentityLane(WireShape):
     """One lane in the session's lane book.
 
-    ``person_id`` is the durable cross-session lineage identity, present only
-    after a committed identity resolution; ``display_name`` labels it.
-    ``resumed`` marks a lane that resumed a profile the organization
-    enrolled, and ``is_agent`` marks the org's declared agent identity for
-    self-recognition filtering.
+    ``lane`` is the integer identity/state scope. ``speaker_id`` is the
+    session-local Sortformer surface explicitly bound to that scope; its text
+    is not derived from the lane number. ``person_id`` is the durable
+    cross-session lineage identity, present only after a committed identity
+    resolution; ``display_name`` labels it. ``resumed`` marks a lane that
+    resumed a profile the organization enrolled, and ``is_agent`` marks the
+    org's declared agent identity for self-recognition filtering.
     """
 
     lane: int
@@ -452,10 +464,11 @@ class IdentityLane(WireShape):
 class IdentityTimeline(WireShape):
     """The session's whole identity history, in commit order.
 
-    ``spans`` carries every model assignment in the order the tracker
-    committed them; ``lanes`` is the lane book those spans reference.
+    ``spans`` carries every identity/state assignment in the order the tracker
+    committed them; ``lanes`` is the state-lane book those spans reference.
     ``events`` carries the committed tracker events verbatim so the durable
-    record keeps the raw commit stream beside the derived spans.
+    record keeps the raw commit stream beside the derived spans. Sortformer
+    diarization remains a separate session-local surface timeline.
     """
 
     schema_version: int
@@ -519,11 +532,11 @@ class GatewayEventType(WireEventType):
 
 @dataclass(frozen=True)
 class GatewaySpeakerChangeEvent(WireShape):
-    """``prosodyai.speaker_change``: the model committed the floor moved lanes.
+    """``prosodyai.speaker_change``: Sortformer moved the caller surface.
 
-    ``timestamp_ms`` is retrodictive: it points at the turn's onset on the
-    model's frame clock; the commit itself landed when the segment closed
-    (or when a held segment resolved late).
+    ``speaker_id`` and ``previous_speaker_id`` are session-local Sortformer
+    surfaces. They are not encodings of identity lane numbers.
+    ``timestamp_ms`` points at the new surface's onset on the audio clock.
     """
 
     TYPE: ClassVar[GatewayEventType] = GatewayEventType.SPEAKER_CHANGE
@@ -539,12 +552,11 @@ class GatewaySpeakerChangeEvent(WireShape):
 
 @dataclass(frozen=True)
 class GatewayNewSpeakerEvent(WireShape):
-    """``prosodyai.new_speaker``: a lane opened for a voice never heard here.
+    """``prosodyai.new_speaker``: a new identity/state lane opened.
 
-    The voice is new; the person is not optional. The gateway mints the
-    durable person id at the commit that opened the lane, so the first
-    event a caller sees for a speaker already names who the session will
-    persist them as.
+    ``speaker_id`` is the session-local Sortformer surface explicitly bound to
+    the new state lane; it is not computed from the lane number. ``person_id``
+    carries a durable identity when one is available and is otherwise null.
     """
 
     TYPE: ClassVar[GatewayEventType] = GatewayEventType.NEW_SPEAKER
@@ -559,10 +571,12 @@ class GatewayNewSpeakerEvent(WireShape):
 
 @dataclass(frozen=True)
 class GatewayIdentityResolvedEvent(WireShape):
-    """``prosodyai.identity_resolved``: a lane matched a profile the organization enrolled.
+    """``prosodyai.identity_resolved``: identity state matched an enrolled profile.
 
-    Fires once per lane, at its first committed segment. ``verified`` is true
-    when the decision came from the decoder's absolute membership test.
+    Fires once per identity lane, at its first committed segment.
+    ``speaker_id`` is the explicitly bound session-local Sortformer surface,
+    not a rendering of that lane. ``verified`` is true when the decision came
+    from the decoder's absolute membership test.
     """
 
     TYPE: ClassVar[GatewayEventType] = GatewayEventType.IDENTITY_RESOLVED
@@ -664,9 +678,9 @@ class RoomEventType(WireEventType):
     MOMENT = "prosodyai.moment"
 
 
-# The agent's own lane on the transcript. Jarvis is the other party on the
-# call, so his words carry this fixed label. A ``speaker_N`` lane names a
-# voice the tracker diarized out of the caller's audio.
+# Jarvis is the other party on the call, so his words carry this fixed label.
+# A caller ``speaker_id`` names a session-local Sortformer surface. Identity
+# state lanes are separate and may be associated only through explicit state.
 AGENT_SPEAKER_ID = "agent"
 
 
@@ -706,10 +720,11 @@ class TranscriptDelta(WireShape):
 class IdentityEvent(WireShape):
     """A committed identity resolution, announced mid-conversation.
 
-    ``resolved_at_ms`` is the audio position (ms into the call) of the
-    frame whose tracker assignment resolved the person. The model owns this
-    clock, so it is the resolution time; consumers report it and derive
-    nothing from it.
+    ``speaker_id`` is the session-local Sortformer surface explicitly bound to
+    the resolved identity state. ``resolved_at_ms`` is the audio position (ms
+    into the call) of the frame whose tracker assignment resolved the person.
+    The model owns this clock, so it is the resolution time; consumers report
+    it and derive nothing from it.
     """
 
     TYPE: ClassVar[RoomEventType] = RoomEventType.IDENTITY
@@ -723,10 +738,11 @@ class IdentityEvent(WireShape):
 
 @dataclass(frozen=True)
 class TranscriptEvent(WireShape):
-    """Words for one tracked frame, attributed by the model's tracker.
+    """Words attributed to one session-local Sortformer speaker surface.
 
-    Subtitles only. Speaker and identity decisions arrive on the committed
-    model-event channel and are never derived from this text.
+    Subtitles only. ``speaker_id`` is not an identity lane. Identity decisions
+    arrive on the committed model-event channel and are never derived from
+    this text.
     """
 
     TYPE: ClassVar[RoomEventType] = RoomEventType.TRANSCRIPT
@@ -745,8 +761,9 @@ class MomentRecordEvent(WireShape):
     overlapped the turn's span. ``delta`` carries the model's committed
     event verbatim. ``delta`` is ``None`` when the model committed no
     excursion over the span, so the absence of significance is an explicit
-    fact on the record. ``person_id`` is the durable identity behind the
-    lane when the session had resolved one at commit time.
+    fact on the record. ``speaker_id`` is the session-local Sortformer surface;
+    ``person_id`` is the durable identity explicitly resolved to it at commit
+    time.
     """
 
     TYPE: ClassVar[RoomEventType] = RoomEventType.MOMENT
@@ -842,7 +859,8 @@ identity and transcript republications, the per-turn moment records, the
 committed gateway events, and the
 conversation events relayed verbatim. A client's event vocabulary is this
 tuple. The tracker events stay off it: they are the model's own clock and the
-gateway relabels them before anybody outside sees them."""
+gateway binds identity state to a session-local Sortformer surface before
+anybody outside sees an identity event."""
 
 
 def parse_room_event(payload: Mapping[str, Any]) -> Optional[Any]:
