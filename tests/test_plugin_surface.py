@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+
 from livekit.agents import Plugin
 from livekit.plugins import prosodyai
 from livekit.plugins.prosodyai.events import parse_control_event
