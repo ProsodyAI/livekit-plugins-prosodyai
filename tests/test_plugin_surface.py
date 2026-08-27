@@ -72,9 +72,7 @@ async def test_model_on_receives_turn_and_barge_in(
 
     session = model.session()
     turn = prosodyai.TurnBoundaryEvent(frame_ms=6400, commit_ms=6720)
-    barge = prosodyai.BargeInEvent(
-        frame_ms=9600, commit_ms=10080, duration_ms=480, resolved=True
-    )
+    barge = prosodyai.BargeInEvent(frame_ms=9600, commit_ms=10080, duration_ms=480, resolved=True)
     await session._on_event(turn)
     await session._on_event(barge)
     assert turns == [turn]
