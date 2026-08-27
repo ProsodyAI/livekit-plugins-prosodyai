@@ -193,9 +193,7 @@ async def test_full_duplex_session_against_the_wire_protocol(monkeypatch):
         # The conversation family rides the same 0x06 channel and reaches its
         # own name, so an app hears the dictated entity without filtering the
         # tracker's events out of the way.
-        span: EntitySpanEvent = await asyncio.wait_for(
-            conversation_events.get(), timeout=10.0
-        )
+        span: EntitySpanEvent = await asyncio.wait_for(conversation_events.get(), timeout=10.0)
         assert isinstance(span, EntitySpanEvent)
         assert span.kind == "email"
         assert span.frame_ms == 5200
