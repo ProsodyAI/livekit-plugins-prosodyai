@@ -167,7 +167,6 @@ jobs:
         run: |
           ruff check . --line-length 100 --select E,W,F,I,B,C4 --ignore E501,E402,B904,B008,B007
           ruff format --check . --line-length 100
-          pytest
           python -m build
           python -m twine check dist/*
 

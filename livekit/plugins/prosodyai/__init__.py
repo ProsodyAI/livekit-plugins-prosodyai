@@ -1,79 +1,58 @@
 """ProsodyAI plugin for LiveKit Agents.
 
-Inference runs server-side; this plugin is pure I/O. ``RealtimeModel`` and
-``FullDuplexBridge`` carry full-duplex speech with persistent speaker identity.
+Full-duplex speech with persistent speaker identity.
+
+See https://prosodyai.app/docs and https://docs.livekit.io/agents/
 """
 
-from .full_duplex import (
+from . import realtime
+from .bridge import FullDuplexBridge
+from .events import (
     AgentToolEvent,
     AgentToolStatusEvent,
-    BackendCapabilityError,
     BargeInEvent,
     ConversationEvent,
     EntitySpanEvent,
-    FullDuplexBridge,
-    FullDuplexBridgeConfig,
-    GatewayConnection,
-    GatewayControlFrame,
-    GatewayEnvError,
     GatewayEvent,
     IdentityEvent,
     IdentityResolvedEvent,
     ModelEvent,
     NewSpeakerEvent,
-    PersonaPlexBackend,
     ReadyEvent,
-    SessionOpened,
     SpeakerChangeEvent,
-    SpeechAudio,
-    SpeechBackend,
-    SpeechBackendCapabilities,
-    SpeechItem,
-    SpeechSessionConfig,
-    SpeechText,
     StateDeltaEvent,
     TextEvent,
     TranscriptDelta,
     TranscriptEvent,
     TurnBoundaryEvent,
-    gateway_ws_url,
     parse_control_event,
 )
-from .realtime import (
-    RealtimeModel,
-    RealtimeSession,
-)
+from .gateway import GatewayConnection, GatewayEnvError, gateway_ws_url
+from .realtime import RealtimeModel, RealtimeSession
 from .version import __version__
+from .wire import ConversationEventType, GatewayEventType, RoomEventType
 
 __all__ = [
     "AgentToolEvent",
     "AgentToolStatusEvent",
-    "BackendCapabilityError",
     "BargeInEvent",
     "ConversationEvent",
+    "ConversationEventType",
+    "GatewayEventType",
+    "RoomEventType",
     "EntitySpanEvent",
     "FullDuplexBridge",
-    "FullDuplexBridgeConfig",
     "GatewayConnection",
-    "GatewayControlFrame",
     "GatewayEnvError",
     "GatewayEvent",
     "IdentityEvent",
     "IdentityResolvedEvent",
     "ModelEvent",
     "NewSpeakerEvent",
-    "PersonaPlexBackend",
     "ReadyEvent",
     "RealtimeModel",
     "RealtimeSession",
-    "SessionOpened",
     "SpeakerChangeEvent",
-    "SpeechAudio",
-    "SpeechBackend",
-    "SpeechBackendCapabilities",
-    "SpeechItem",
-    "SpeechSessionConfig",
-    "SpeechText",
     "StateDeltaEvent",
     "TextEvent",
     "TranscriptDelta",
@@ -81,6 +60,7 @@ __all__ = [
     "TurnBoundaryEvent",
     "gateway_ws_url",
     "parse_control_event",
+    "realtime",
     "__version__",
 ]
 

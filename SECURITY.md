@@ -19,8 +19,8 @@ responsibility.
 
 The key never enters the gateway URL. It is sent as the `x-api-key` header on
 the WebSocket handshake, so the connection target stays safe to log, print in a
-traceback, and hand to a proxy. `GatewayConnection` and `FullDuplexBridgeConfig`
-both keep the key out of their `repr`.
+traceback, and hand to a proxy. `GatewayConnection` keeps the key out of its
+`repr`.
 
 Audio flows over one WebSocket to the configured ProsodyAI gateway for the
 life of the session. Use the production endpoint unless you are testing

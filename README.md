@@ -1,44 +1,41 @@
-# ProsodyAI for LiveKit Agents
+# ProsodyAI plugin for LiveKit Agents
 
-**Full-duplex speech agents with persistent speaker identity**
+Full-duplex speech with persistent speaker identity.
 
-[![PyPI](https://img.shields.io/pypi/v/livekit-plugins-prosodyai)](https://pypi.org/project/livekit-plugins-prosodyai/)
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/livekit-plugins-prosodyai/)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+See [https://docs.livekit.io/agents/](https://docs.livekit.io/agents/) and
+[https://prosodyai.app/docs](https://prosodyai.app/docs) for more information.
 
-Plugin for [LiveKit Agents](https://docs.livekit.io/agents/) that connects a
-room to the ProsodyAI speech model. The model is full-duplex in the sense the
-speech-to-speech literature uses: the agent listens and speaks at the same
-time on one continuous connection, and turn-taking, overlap, and barge-in
-emerge from the model. Speaker identity and conversation events arrive on
-the same stream.
-
-[Product](https://prosodyai.app) ·
-[Docs](https://prosodyai.app/docs) ·
-[LiveKit Agents](https://docs.livekit.io/agents/) ·
-[PyPI](https://pypi.org/project/livekit-plugins-prosodyai/)
-
-## Install
+## Installation
 
 ```bash
-pip install livekit-plugins-prosodyai[duplex]
-export PROSODYAI_API_KEY=psk_...
+pip install livekit-plugins-prosodyai
 ```
+
+## Pre-requisites
+
+You'll need an API key from ProsodyAI. It can be set as an environment variable: `PROSODYAI_API_KEY`
 
 ## Usage
 
+Use ProsodyAI within an `AgentSession`. A complete worker is in [`examples/agent.py`](examples/agent.py).
+
 ```python
-from livekit.agents import AgentSession
+from livekit.agents import Agent, AgentSession
 from livekit.plugins import prosodyai
 
-model = prosodyai.RealtimeModel()
-session = AgentSession(llm=model)
+session = AgentSession(
+    llm=prosodyai.realtime.RealtimeModel(),
+)
 
-await session.start(room=ctx.room)
+await session.start(
+    room=ctx.room,
+    agent=Agent(instructions="You are a helpful voice assistant."),
+)
 ```
 
 `RealtimeModel` sends continuous room audio to ProsodyAI and returns generated
-audio, streaming transcripts, identity updates, and conversation events.
+audio, streaming transcripts, identity updates, and conversation events. The
+model handles barge-in; do not attach a turn detector.
 
 ## Speaker identity
 
@@ -46,50 +43,57 @@ Conversation-local diarization labels look like `speaker_0`. When the model
 resolves an enrolled caller, it emits a durable `person_id` and display name.
 Returning callers resume their saved speaker state.
 
+Subscribe on the model before `session.start` so the listener is attached
+when the first event arrives:
+
 ```python
-realtime = model.sessions[-1]
+model = prosodyai.realtime.RealtimeModel()
 
 
-@realtime.on("prosody_identity")
+@model.on(prosodyai.RoomEventType.IDENTITY)
 def on_identity(event):
     print(event.speaker_id, event.person_id, event.display_name)
 ```
 
 ## Events
 
-| Event | |
+Subscribe with the wire enums. Room and gateway events are `prosodyai.*`. Conversation events keep the names the model committed.
+
+| Enum | |
 | --- | --- |
-| `prosody_transcript` | Committed words with `speaker_id` and word-level timestamps (`start_ms`, `end_ms`) |
-| `prosody_event` | Speaker change, new speaker, or identity resolved |
-| `prosody_identity` | Returning person committed |
-| `prosody_text` | Generated text stream |
+| `RoomEventType.TRANSCRIPT` | Committed words with `speaker_id` and word-level timestamps |
+| `RoomEventType.IDENTITY` | Returning person committed |
+| `RoomEventType.TEXT` | Generated text stream |
+| `GatewayEventType.SPEAKER_CHANGE` | The floor moved lanes |
+| `GatewayEventType.NEW_SPEAKER` | A lane opened for a voice never heard here |
+| `GatewayEventType.IDENTITY_RESOLVED` | A lane matched an enrolled profile |
+| `ConversationEventType.TURN_BOUNDARY` | The floor passed between voices |
+| `ConversationEventType.BARGE_IN` | A second voice entered against held speech |
+| `ConversationEventType.STATE_DELTA` | The lane's state moved against its baseline |
+| `ConversationEventType.ENTITY_SPAN` | A dictated entity's extent |
 
 ```python
-@realtime.on("prosody_event")
-def on_model_event(event):
-    print(event.to_dict())
+@model.on(prosodyai.ConversationEventType.TURN_BOUNDARY)
+def on_turn(event: prosodyai.TurnBoundaryEvent):
+    print(event.frame_ms, event.commit_ms)
+
+
+@model.on(prosodyai.ConversationEventType.BARGE_IN)
+def on_barge_in(event: prosodyai.BargeInEvent):
+    print(event.frame_ms, event.duration_ms, event.resolved)
 ```
+
+User words also arrive as LiveKit `input_audio_transcription_completed` on
+the realtime session, so a stock `AgentSession` transcribes the caller.
 
 ## Lower-level bridge
 
 For workers that publish and subscribe to tracks directly:
 
 ```python
-from livekit.plugins.prosodyai import (
-    FullDuplexBridge,
-    FullDuplexBridgeConfig,
-    GatewayConnection,
-)
+from livekit.plugins.prosodyai import FullDuplexBridge
 
-connection = GatewayConnection.from_environment()
-bridge = FullDuplexBridge(
-    FullDuplexBridgeConfig(
-        url=connection.url,
-        api_key=connection.api_key,
-        room_sample_rate=24_000,
-        publish_sample_rate=24_000,
-    )
-)
+bridge = FullDuplexBridge()
 
 await bridge.run(
     uplink_pcm16(),
@@ -100,38 +104,6 @@ await bridge.run(
 
 `uplink_pcm16()` yields little-endian mono PCM16. The bridge returns the same
 format for publication.
-
-## Speech backends
-
-The bridge drives its speaking loop through the `SpeechBackend` protocol.
-PersonaPlex on the ProsodyAI gateway is the default. Another
-speech-to-speech loop (an OpenAI Realtime-style, Gemini Live-style, or
-Moshi-style session) plugs in as a class with five members: a
-`capabilities` property returning a frozen `SpeechBackendCapabilities`
-(`full_duplex`, `accepts_voice_prompt`, `accepts_role_prompt`,
-`sample_rate`), `open(config)` taking a `SpeechSessionConfig`,
-`send_audio(samples)` taking mono float32 at the declared rate,
-`receive()` yielding `SessionOpened`, `SpeechAudio`, and `SpeechText`
-items in production order, and `close()`.
-
-```python
-from livekit.plugins.prosodyai import FullDuplexBridge, FullDuplexBridgeConfig
-
-bridge = FullDuplexBridge(
-    FullDuplexBridgeConfig(
-        room_sample_rate=16_000, publish_sample_rate=16_000, role_prompt="You are a concierge."
-    ),
-    backend=MyRealtimeBackend(),
-)
-```
-
-Capabilities are declared facts. A turn-based backend declares
-`full_duplex=False` and the bridge carries that declaration as-is; the
-bridge contains no turn detector. A prompt on the config that the
-backend's capabilities exclude raises `BackendCapabilityError` at
-construction. Speaker identity, transcripts, and conversation events are
-ProsodySSM readouts on the gateway session; they arrive with the default
-PersonaPlex backend.
 
 ## License
 
