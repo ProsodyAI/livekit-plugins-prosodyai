@@ -45,9 +45,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - run: python -m pip install -e '.[dev]' ruff build twine
+      - run: python -m pytest tests
       - run: ruff check . --line-length 100 --select E,W,F,I,B,C4 --ignore E501,E402,B904,B008,B007
       - run: ruff format --check . --line-length 100
-      - run: python -m pytest
       - run: python -m build
       - run: python -m twine check dist/*
 

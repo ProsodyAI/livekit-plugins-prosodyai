@@ -33,14 +33,13 @@ dependencies = [
     "livekit>=1.1.13",
     "livekit-agents>=1.6.6",
     "websockets>=16",
-]
-
-[project.optional-dependencies]
-duplex = [
     "numpy>=1.24",
     "sphn>=0.1.4",
 ]
-dev = ["pytest", "pytest-asyncio", "numpy>=1.24"]
+
+[project.optional-dependencies]
+duplex = []
+dev = ["pytest", "pytest-asyncio", "ruff"]
 
 [project.urls]
 Homepage = "https://prosodyai.app"
@@ -58,6 +57,10 @@ PyPI = "https://pypi.org/project/livekit-plugins-prosodyai/"
 known-first-party = ["livekit", "livekit_plugins_prosodyai"]
 combine-as-imports = true
 
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
 [tool.hatch.version]
 path = "livekit/plugins/prosodyai/version.py"
 
@@ -65,4 +68,4 @@ path = "livekit/plugins/prosodyai/version.py"
 packages = ["livekit", "livekit_plugins_prosodyai"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/livekit", "/livekit_plugins_prosodyai", "/LICENSE"]
+include = ["/livekit", "/livekit_plugins_prosodyai", "/examples", "/LICENSE"]

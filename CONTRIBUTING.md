@@ -8,22 +8,16 @@ source .venv/bin/activate
 python -m pip install -e '.[dev]'
 ```
 
-The test suite uses synthetic payloads and does not require credentials or a
-network connection.
+[`examples/agent.py`](examples/agent.py) is the public usage surface.
 
 ## Checks
 
 ```bash
+python -m pytest tests
 ruff check .
-mypy livekit/plugins/prosodyai livekit_plugins_prosodyai
-python -m pytest
 python -m build
 python -m twine check dist/*
 ```
-
-Add a focused test for every public behavior change. Keep transport details
-inside the package and make acoustic measurements available through the typed
-conversation surface.
 
 The package must remain importable as `from livekit.plugins import prosodyai`, and importing it
 must register exactly one `Plugin` instance with the LiveKit Agents runtime. The primary API is

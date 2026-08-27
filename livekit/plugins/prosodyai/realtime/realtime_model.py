@@ -1,111 +1,96 @@
 """The ProsodyAI gateway as a LiveKit Agents realtime model.
 
+    from livekit.plugins import prosodyai
+
+    session = AgentSession(llm=prosodyai.realtime.RealtimeModel())
+
 The model is continuous full-duplex: the session emits exactly one generation
 whose audio and text streams stay open for the life of the conversation.
+Identity, transcript, and conversation events emit on both the session and
+the model, so listeners can attach before ``AgentSession.start``.
 """
 
 from __future__ import annotations
 
 import asyncio
-import logging
+import contextlib
 import time
-import uuid
+import weakref
+from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Literal
-
-import numpy as np
 
 from livekit import rtc
 from livekit.agents import llm, utils
 from livekit.agents.types import NOT_GIVEN, NotGivenOr
+from livekit.agents.utils import is_given
 
-from .full_duplex import (
-    GATEWAY_SAMPLE_RATE,
-    ConversationEvent,
-    FullDuplexBridge,
-    FullDuplexBridgeConfig,
-    GatewayConnection,
+from ..bridge import FullDuplexBridge
+from ..events import (
+    BargeInEvent,
     GatewayEvent,
-    IdentityEvent,
-    IdentityResolvedEvent,
-    ModelEvent,
-    NewSpeakerEvent,
     ReadyEvent,
-    SpeakerChangeEvent,
     TextEvent,
     TranscriptEvent,
+    TurnBoundaryEvent,
 )
-from .wire import WireEventType
+from ..gateway import SAMPLE_RATE, GatewayConnection
+from ..log import logger
+from ..wire import ConversationEventType, GatewayEventType, RoomEventType, WireEventType
 
-# LiveKit RTP / RoomIO publish at 20 ms. The gateway emits ~80 ms Opus.
-_PUBLISH_FRAME_BYTES = (GATEWAY_SAMPLE_RATE * 20 // 1000) * 2
+NUM_CHANNELS = 1
 
 __all__ = [
-    "ConversationEvent",
-    "IdentityEvent",
-    "IdentityResolvedEvent",
-    "ModelEvent",
-    "NewSpeakerEvent",
+    "BargeInEvent",
+    "ConversationEventType",
+    "GatewayEventType",
     "RealtimeModel",
     "RealtimeSession",
-    "SessionEventType",
-    "SpeakerChangeEvent",
-    "TextEvent",
-    "TranscriptEvent",
-]
-
-logger = logging.getLogger("livekit.plugins.prosodyai.realtime")
-
-
-class SessionEventType(WireEventType):
-    """Session event names, one per gateway readout. Members equal their string values."""
-
-    IDENTITY = "prosody_identity"
-    TEXT = "prosody_text"
-    TRANSCRIPT = "prosody_transcript"
-    EVENT = "prosody_event"
-    #: The learned deciders' commitments: state deltas, turn boundaries,
-    #: barge-ins, and entity spans. Its own name because the wire keeps this
-    #: family in its own union, and an app that wants dictated entities should
-    #: not have to sort them out of the speaker tracker's events.
-    CONVERSATION = "prosody_conversation"
-
-
-EventTypes = Literal[
-    "prosody_identity",
-    "prosody_text",
-    "prosody_transcript",
-    "prosody_event",
-    "prosody_conversation",
+    "RoomEventType",
+    "TurnBoundaryEvent",
 ]
 
 
-class RealtimeModel(llm.RealtimeModel):
-    """Full-duplex speech with persistent speaker identity, as a realtime model."""
+@dataclass
+class _RealtimeOptions:
+    api_key: str
+    url: str
+
+
+class RealtimeModel(llm.RealtimeModel, rtc.EventEmitter[WireEventType]):
+    """Full-duplex speech with persistent speaker identity."""
 
     def __init__(
         self,
         *,
-        connection: GatewayConnection | None = None,
-        base_url: str | None = None,
         api_key: str | None = None,
+        base_url: NotGivenOr[str] = NOT_GIVEN,
     ) -> None:
-        super().__init__(
+        """Connect a LiveKit AgentSession to the ProsodyAI speech model.
+
+        Args:
+            api_key: ProsodyAI API key. Defaults to ``PROSODYAI_API_KEY``.
+            base_url: Gateway origin, for example ``https://api.prosodyai.app``
+                or ``wss://api.prosodyai.app``. Defaults to the production origin.
+        """
+        llm.RealtimeModel.__init__(
+            self,
             capabilities=llm.RealtimeCapabilities(
                 message_truncation=False,
-                # Full duplex: the model handles barge-in itself, so no server turn events.
                 turn_detection=False,
-                # Caller words come off the same socket, already attributed; no STT needed.
                 user_transcription=True,
                 auto_tool_reply_generation=False,
                 audio_output=True,
                 manual_function_calls=False,
-            )
+            ),
         )
-        # Resolve at construction so a missing key fails the worker at startup.
-        self._connection = connection or GatewayConnection.from_environment(
-            base_url=base_url, api_key=api_key
+        rtc.EventEmitter.__init__(self)
+        connection = GatewayConnection.from_environment(
+            api_key=api_key,
+            base_url=base_url if is_given(base_url) else None,
         )
-        self._sessions: list[RealtimeSession] = []
+        self._opts = _RealtimeOptions(api_key=connection.api_key, url=connection.url)
+        self._sessions = weakref.WeakSet[RealtimeSession]()
 
     @property
     def model(self) -> str:
@@ -115,43 +100,25 @@ class RealtimeModel(llm.RealtimeModel):
     def provider(self) -> str:
         return "prosodyai"
 
-    @property
-    def sessions(self) -> list["RealtimeSession"]:
-        """The model's open sessions, in the order they opened: how a worker
-        reaches the identity events after handing the model to an
-        ``AgentSession``. A session leaves this list when it closes."""
-        return list(self._sessions)
-
-    def session(self, *, turn_detection_disabled: bool = False) -> "RealtimeSession":
-        # The runtime contains no turn detector; this compatibility parameter is inert.
+    def session(self, *, turn_detection_disabled: bool = False) -> RealtimeSession:
         del turn_detection_disabled
         sess = RealtimeSession(self)
-        self._sessions.append(sess)
+        self._sessions.add(sess)
         return sess
 
-    def _forget(self, session: "RealtimeSession") -> None:
-        """Drop one closed session.
-
-        A model outlives its sessions (one worker process takes call after
-        call), so a closed session left on this list holds its channels, its
-        bridge, and whatever audio never drained for the life of the worker.
-        """
-        try:
-            self._sessions.remove(session)
-        except ValueError:
-            pass
-
     async def aclose(self) -> None:
-        sessions, self._sessions = self._sessions, []
-        await asyncio.gather(*(sess.aclose() for sess in sessions), return_exceptions=True)
+        await asyncio.gather(
+            *(sess.aclose() for sess in list(self._sessions)),
+            return_exceptions=True,
+        )
 
 
-class RealtimeSession(llm.RealtimeSession[EventTypes]):
+class RealtimeSession(llm.RealtimeSession[WireEventType]):
     """One conversation: one bridge, one open-ended generation."""
 
     def __init__(self, realtime_model: RealtimeModel) -> None:
         super().__init__(realtime_model)
-        self._model = realtime_model
+        self._realtime_model = realtime_model
         self._chat_ctx = llm.ChatContext.empty()
         self._tools = llm.ToolContext.empty()
         self._uplink = utils.aio.Chan[bytes]()
@@ -159,35 +126,55 @@ class RealtimeSession(llm.RealtimeSession[EventTypes]):
         self._text_ch = utils.aio.Chan[str]()
         self._bridge: FullDuplexBridge | None = None
         self._bridge_task: asyncio.Task[None] | None = None
+        self._input_resampler: rtc.AudioResampler | None = None
         self._generation_emitted = False
         self._closed = False
 
+    def _emit_plugin(self, name: WireEventType, event: object) -> None:
+        self.emit(name, event)
+        self._realtime_model.emit(name, event)
+
     # ------------------------------------------------------------- audio in
 
+    @utils.log_exceptions(logger=logger)
     def push_audio(self, frame: rtc.AudioFrame) -> None:
         if self._closed:
             return
         if self._bridge_task is None:
-            self._start_bridge(room_sample_rate=frame.sample_rate)
-        samples = np.frombuffer(frame.data, dtype=np.int16)
-        if frame.num_channels > 1:
-            samples = samples.reshape(-1, frame.num_channels).mean(axis=1).astype(np.int16)
-        try:
-            self._uplink.send_nowait(samples.tobytes())
-        except utils.aio.ChanClosed:
-            pass
+            self._start_bridge()
+        for resampled in self._resample_audio(frame):
+            with contextlib.suppress(utils.aio.ChanClosed):
+                self._uplink.send_nowait(bytes(resampled.data))
 
-    def _start_bridge(self, *, room_sample_rate: int) -> None:
-        self._bridge = FullDuplexBridge(
-            FullDuplexBridgeConfig(
-                url=self._model._connection.url,
-                api_key=self._model._connection.api_key,
-                room_sample_rate=room_sample_rate,
-                publish_sample_rate=GATEWAY_SAMPLE_RATE,
+    def _resample_audio(self, frame: rtc.AudioFrame) -> Iterator[rtc.AudioFrame]:
+        if self._input_resampler is not None:
+            if frame.sample_rate != self._input_resampler._input_rate:
+                self._input_resampler = None
+
+        if self._input_resampler is None and (
+            frame.sample_rate != SAMPLE_RATE or frame.num_channels != NUM_CHANNELS
+        ):
+            self._input_resampler = rtc.AudioResampler(
+                input_rate=frame.sample_rate,
+                output_rate=SAMPLE_RATE,
+                num_channels=NUM_CHANNELS,
             )
-        )
-        self._bridge_task = asyncio.create_task(self._run_bridge(), name="duplex-realtime-bridge")
 
+        if self._input_resampler is not None:
+            yield from self._input_resampler.push(frame)
+        else:
+            yield frame
+
+    def _start_bridge(self) -> None:
+        self._bridge = FullDuplexBridge(
+            url=self._realtime_model._opts.url,
+            api_key=self._realtime_model._opts.api_key,
+            room_sample_rate=SAMPLE_RATE,
+            publish_sample_rate=SAMPLE_RATE,
+        )
+        self._bridge_task = asyncio.create_task(self._run_bridge(), name="prosodyai-realtime")
+
+    @utils.log_exceptions(logger=logger)
     async def _run_bridge(self) -> None:
         assert self._bridge is not None
         try:
@@ -202,7 +189,7 @@ class RealtimeSession(llm.RealtimeSession[EventTypes]):
                     "error",
                     llm.RealtimeModelError(
                         timestamp=time.time(),
-                        label=self._model.label,
+                        label=self._realtime_model.label,
                         error=exc,
                         recoverable=False,
                     ),
@@ -213,58 +200,52 @@ class RealtimeSession(llm.RealtimeSession[EventTypes]):
     async def _on_downlink(self, pcm: bytes) -> None:
         if self._closed or not pcm:
             return
-        offset = 0
-        while offset + 2 <= len(pcm):
-            chunk = pcm[offset : offset + _PUBLISH_FRAME_BYTES]
-            offset += len(chunk)
-            if len(chunk) < 2:
-                break
+        pcm_view = memoryview(pcm)
+        if len(pcm_view) < 2:
+            return
+        aligned = bytes(pcm_view[: len(pcm_view) - (len(pcm_view) % 2)])
+        with contextlib.suppress(utils.aio.ChanClosed):
             self._audio_ch.send_nowait(
                 rtc.AudioFrame(
-                    data=chunk,
-                    sample_rate=GATEWAY_SAMPLE_RATE,
-                    num_channels=1,
-                    samples_per_channel=len(chunk) // 2,
+                    data=aligned,
+                    sample_rate=SAMPLE_RATE,
+                    num_channels=NUM_CHANNELS,
+                    samples_per_channel=len(aligned) // 2,
                 )
             )
 
     async def _on_event(self, event: GatewayEvent) -> None:
         if isinstance(event, ReadyEvent):
             self._emit_generation()
-        elif isinstance(event, TextEvent):
+            return
+        if isinstance(event, TextEvent):
             if event.text and not self._closed:
-                self._text_ch.send_nowait(event.text)
-                # Also a session event, so apps can skip the generation's text stream.
-                self.emit(SessionEventType.TEXT.value, event)
-        elif isinstance(event, TranscriptEvent):
+                with contextlib.suppress(utils.aio.ChanClosed):
+                    self._text_ch.send_nowait(event.text)
+                self._emit_plugin(event.TYPE, event)
+            return
+        if isinstance(event, TranscriptEvent):
             self._on_transcript(event)
-        elif isinstance(event, (SpeakerChangeEvent, NewSpeakerEvent, IdentityResolvedEvent)):
-            self.emit(SessionEventType.EVENT.value, event)
-        elif isinstance(event, IdentityEvent):
-            self.emit(SessionEventType.IDENTITY.value, event)
-        elif isinstance(event, ConversationEvent):
-            self.emit(SessionEventType.CONVERSATION.value, event)
+            return
+        if event.TYPE is None:
+            return
+        self._emit_plugin(event.TYPE, event)
 
     def _on_transcript(self, event: TranscriptEvent) -> None:
-        """Relay one committed span of caller words, twice: ``prosody_transcript``
-        in the model's own shape, and the framework event in LiveKit's vocabulary
-        so a stock ``AgentSession`` transcribes the user.
-        """
-        self.emit(SessionEventType.TRANSCRIPT.value, event)
+        self._emit_plugin(event.TYPE, event)
         text = " ".join(delta.text for delta in event.deltas if delta.text).strip()
         if not text:
             return
         self.emit(
             "input_audio_transcription_completed",
             llm.InputTranscriptionCompleted(
-                item_id=utils.shortuuid("duplex_words_"),
+                item_id=utils.shortuuid("prosodyai-words-"),
                 transcript=text,
                 is_final=True,
             ),
         )
 
     def _emit_generation(self) -> None:
-        """One conversation-length generation, opened when the gateway is ready."""
         if self._generation_emitted:
             return
         self._generation_emitted = True
@@ -276,7 +257,7 @@ class RealtimeSession(llm.RealtimeSession[EventTypes]):
         modalities.set_result(["audio", "text"])
         message_ch.send_nowait(
             llm.MessageGeneration(
-                message_id=utils.shortuuid("duplex_"),
+                message_id=utils.shortuuid("prosodyai-"),
                 text_stream=self._text_ch,
                 audio_stream=self._audio_ch,
                 modalities=modalities,
@@ -290,7 +271,7 @@ class RealtimeSession(llm.RealtimeSession[EventTypes]):
                 message_stream=message_ch,
                 function_stream=function_ch,
                 user_initiated=False,
-                response_id=str(uuid.uuid4()),
+                response_id=utils.shortuuid("prosodyai-resp-"),
             ),
         )
 
@@ -305,13 +286,12 @@ class RealtimeSession(llm.RealtimeSession[EventTypes]):
         return self._tools
 
     async def update_instructions(self, instructions: str) -> None:
-        # Priming is the gateway's job; client instructions have no channel.
         logger.debug("update_instructions ignored (gateway owns priming)")
 
     async def update_chat_ctx(self, chat_ctx: llm.ChatContext) -> None:
         self._chat_ctx = chat_ctx
 
-    async def update_tools(self, tools) -> None:
+    async def update_tools(self, tools: list) -> None:
         self._tools = llm.ToolContext(tools)
 
     def update_options(self, *, tool_choice: NotGivenOr[llm.ToolChoice | None] = NOT_GIVEN) -> None:
@@ -346,7 +326,6 @@ class RealtimeSession(llm.RealtimeSession[EventTypes]):
         return None
 
     def interrupt(self) -> None:
-        # Barge-in is the model's own behavior; there is no client-side generation to cancel.
         return None
 
     def truncate(
@@ -367,12 +346,8 @@ class RealtimeSession(llm.RealtimeSession[EventTypes]):
             self._bridge.close()
         self._uplink.close()
         if self._bridge_task is not None:
-            self._bridge_task.cancel()
-            await asyncio.gather(self._bridge_task, return_exceptions=True)
+            await utils.aio.cancel_and_wait(self._bridge_task)
         self._audio_ch.close()
         self._text_ch.close()
-        # Nothing here outlives the call: the bridge holds the backend, and the
-        # model holds this session until it hears the session is done.
         self._bridge = None
         self._bridge_task = None
-        self._model._forget(self)
