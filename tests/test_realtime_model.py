@@ -92,9 +92,7 @@ async def _fake_gateway(websocket) -> None:
         clock = np.arange(4 * FRAME_SAMPLES, dtype=np.float32) / SAMPLE_RATE
         tone = 0.2 * np.sin(2.0 * np.pi * 440.0 * clock).astype(np.float32)
         for index in range(4):
-            packet = writer.append_pcm(
-                tone[index * FRAME_SAMPLES : (index + 1) * FRAME_SAMPLES]
-            )
+            packet = writer.append_pcm(tone[index * FRAME_SAMPLES : (index + 1) * FRAME_SAMPLES])
             if packet:
                 await websocket.send(bytes([GatewayAudio.KIND]) + packet)
 

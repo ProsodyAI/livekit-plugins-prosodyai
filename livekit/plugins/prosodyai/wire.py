@@ -59,6 +59,18 @@ class WireEventType(str, Enum):
         return self.value
 
 
+# ---------------------------------------------------------------------------
+# Gateway socket frame kinds: byte 0 of every caller frame.
+
+KIND_HANDSHAKE = 0x00
+KIND_AUDIO = 0x01
+KIND_TEXT = 0x02
+KIND_CONTROL = 0x03
+KIND_IDENTITY = 0x04
+KIND_TRANSCRIPT = 0x05
+KIND_EVENT = 0x06
+
+
 def speaker_label(lane: int) -> str:
     """Serialize one integer identity/state lane as its stable internal key.
 
