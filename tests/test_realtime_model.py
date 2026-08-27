@@ -15,6 +15,7 @@ import sphn
 from websockets.asyncio.server import serve
 
 from livekit import rtc
+from livekit.plugins.prosodyai import EntitySpanEvent
 from livekit.plugins.prosodyai.full_duplex import (
     GATEWAY_FRAME_SAMPLES,
     GATEWAY_SAMPLE_RATE,
@@ -32,7 +33,6 @@ from livekit.plugins.prosodyai.realtime import (
     TextEvent,
     TranscriptEvent,
 )
-from livekit.plugins.prosodyai import EntitySpanEvent
 
 ROOM_SAMPLE_RATE = 16_000
 FRAME_SAMPLES = ROOM_SAMPLE_RATE * 20 // 1000  # 20 ms room frames
