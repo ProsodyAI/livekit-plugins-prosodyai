@@ -27,7 +27,12 @@ from .events import (
     TurnBoundaryEvent,
     parse_control_event,
 )
-from .gateway import GatewayConnection, GatewayEnvError, gateway_ws_url
+from .gateway import (
+    RECONNECTABLE_ERRORS,
+    GatewayConnection,
+    GatewayEnvError,
+    gateway_ws_url,
+)
 from .realtime import RealtimeModel, RealtimeSession
 from .version import __version__
 from .wire import ConversationEventType, GatewayEventType, RoomEventType
@@ -49,6 +54,7 @@ __all__ = [
     "IdentityResolvedEvent",
     "ModelEvent",
     "NewSpeakerEvent",
+    "RECONNECTABLE_ERRORS",
     "ReadyEvent",
     "RealtimeModel",
     "RealtimeSession",
