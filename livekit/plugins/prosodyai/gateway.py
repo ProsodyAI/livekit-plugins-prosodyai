@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from websockets.asyncio.client import ClientConnection, connect as ws_connect
+from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
 from .frames import GatewayAudio, GatewayControlFrame
 
@@ -22,12 +23,23 @@ REALTIME_PATH = "/v1/realtime"
 API_KEY_HEADER = "x-api-key"
 DEFAULT_ORIGIN = "https://api.prosodyai.app"
 
+#: What a gateway restart looks like from a consumer: the live socket dropped
+#: (1012 on a deploy or reload), or a redial failed while the service came
+#: back. A caller holding a healthy room may re-dial on these; anything else
+#: is a real defect and must keep failing loudly.
+RECONNECTABLE_ERRORS: tuple[type[BaseException], ...] = (
+    ConnectionClosed,
+    InvalidHandshake,
+    OSError,
+)
+
 __all__ = [
     "API_KEY_HEADER",
     "DEFAULT_ORIGIN",
     "FRAME_MS",
     "FRAME_SAMPLES",
     "REALTIME_PATH",
+    "RECONNECTABLE_ERRORS",
     "SAMPLE_RATE",
     "GatewayConnection",
     "GatewayEnvError",
