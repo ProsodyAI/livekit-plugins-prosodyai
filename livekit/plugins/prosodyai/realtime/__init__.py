@@ -1,9 +1,9 @@
 from .realtime_model import (
     BargeInEvent,
     ConversationEventType,
+    DuplexModel,
+    DuplexSession,
     GatewayEventType,
-    RealtimeModel,
-    RealtimeSession,
     RoomEventType,
     TurnBoundaryEvent,
 )
@@ -11,9 +11,9 @@ from .realtime_model import (
 __all__ = [
     "BargeInEvent",
     "ConversationEventType",
+    "DuplexModel",
+    "DuplexSession",
     "GatewayEventType",
-    "RealtimeModel",
-    "RealtimeSession",
     "RoomEventType",
     "TurnBoundaryEvent",
 ]

@@ -16,7 +16,7 @@ from livekit import rtc
 from livekit.plugins.prosodyai import EntitySpanEvent
 from livekit.plugins.prosodyai.frames import GatewayAudio, GatewayControlFrame
 from livekit.plugins.prosodyai.gateway import FRAME_SAMPLES, SAMPLE_RATE
-from livekit.plugins.prosodyai.realtime import RealtimeModel
+from livekit.plugins.prosodyai.realtime import DuplexModel
 from livekit.plugins.prosodyai.wire import (
     ConversationEventType,
     GatewayEventType,
@@ -113,8 +113,8 @@ async def test_full_duplex_session_against_the_wire_protocol(monkeypatch):
     async with serve(_fake_gateway, "127.0.0.1", 0) as server:
         port = server.sockets[0].getsockname()[1]
 
-        model = RealtimeModel(base_url=f"ws://127.0.0.1:{port}")
-        generations: asyncio.Queue = asyncio.Queue()
+        model = DuplexModel(base_url=f"ws://127.0.0.1:{port}")
+        spoken: asyncio.Queue = asyncio.Queue()
         identities: asyncio.Queue = asyncio.Queue()
         tokens: asyncio.Queue = asyncio.Queue()
         transcripts: asyncio.Queue = asyncio.Queue()
@@ -127,24 +127,28 @@ async def test_full_duplex_session_against_the_wire_protocol(monkeypatch):
         model.on(ConversationEventType.ENTITY_SPAN, conversation_events.put_nowait)
 
         session = model.session()
-        session.on("generation_created", generations.put_nowait)
+        session.on("transcript_delta", spoken.put_nowait)
+
+        async def _drain_audio() -> None:
+            async for item in session.audio_stream:
+                spoken.put_nowait(item)
+                return
+
+        audio_task = asyncio.create_task(_drain_audio())
 
         for _ in range(20):
             session.push_audio(_room_frame())
             await asyncio.sleep(0.005)
 
-        generation = await asyncio.wait_for(generations.get(), timeout=10.0)
-        assert generation.user_initiated is False
-        message = await asyncio.wait_for(generation.message_stream.__anext__(), timeout=5.0)
-        assert await message.modalities == ["audio", "text"]
-
-        text = await asyncio.wait_for(message.text_stream.__anext__(), timeout=10.0)
+        first = await asyncio.wait_for(spoken.get(), timeout=10.0)
+        second = await asyncio.wait_for(spoken.get(), timeout=10.0)
+        text = first.text if hasattr(first, "text") else second.text
+        frame = first.frame if hasattr(first, "frame") else second.frame
         assert text == "hello there"
-
-        frame = await asyncio.wait_for(message.audio_stream.__anext__(), timeout=10.0)
         assert frame.sample_rate == SAMPLE_RATE
         assert frame.num_channels == 1
         assert frame.samples_per_channel > 0
+        audio_task.cancel()
 
         identity: IdentityEvent = await asyncio.wait_for(identities.get(), timeout=10.0)
         assert identity.person_id == IDENTITY["person_id"]
