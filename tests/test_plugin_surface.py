@@ -6,11 +6,11 @@ import json
 
 import pytest
 
-from livekit.agents import Plugin
+from livekit.agents import Plugin, llm
 from livekit.plugins import prosodyai
 from livekit.plugins.prosodyai.events import parse_control_event
 from livekit.plugins.prosodyai.frames import GatewayControlFrame
-from livekit.plugins.prosodyai.realtime import RealtimeModel, RealtimeSession
+from livekit.plugins.prosodyai.realtime import DuplexModel, DuplexSession
 
 
 def test_registers_as_a_livekit_plugin() -> None:
@@ -23,16 +23,17 @@ def test_registers_as_a_livekit_plugin() -> None:
     assert registered[0].version == prosodyai.__version__
 
 
-def test_realtime_model_is_on_the_package_and_the_submodule() -> None:
-    assert prosodyai.RealtimeModel is RealtimeModel
-    assert prosodyai.realtime.RealtimeModel is RealtimeModel
-    assert prosodyai.RealtimeSession is RealtimeSession
+def test_duplex_model_is_on_the_package_and_the_submodule() -> None:
+    assert prosodyai.DuplexModel is DuplexModel
+    assert prosodyai.realtime.DuplexModel is DuplexModel
+    assert prosodyai.DuplexSession is DuplexSession
+    assert issubclass(DuplexModel, llm.DuplexModel)
 
 
 def test_missing_key_fails_at_construction(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("PROSODYAI_API_KEY", raising=False)
     with pytest.raises(prosodyai.GatewayEnvError, match="PROSODYAI_API_KEY"):
-        RealtimeModel()
+        DuplexModel()
 
 
 @pytest.mark.asyncio
@@ -40,7 +41,7 @@ async def test_model_on_receives_identity_before_the_session_starts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("PROSODYAI_API_KEY", "psk_test")
-    model = RealtimeModel()
+    model = DuplexModel()
     received: list[object] = []
     model.on("prosodyai.identity", received.append)
 
@@ -64,7 +65,7 @@ async def test_model_on_receives_turn_and_barge_in(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("PROSODYAI_API_KEY", "psk_test")
-    model = RealtimeModel()
+    model = DuplexModel()
     turns: list[object] = []
     barges: list[object] = []
     model.on("turn_boundary", turns.append)
@@ -93,7 +94,7 @@ async def test_example_string_listeners_fire_from_a_socket_frame(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("PROSODYAI_API_KEY", "psk_test")
-    model = RealtimeModel()
+    model = DuplexModel()
     turns: list[object] = []
     barges: list[object] = []
     model.on("turn_boundary", turns.append)

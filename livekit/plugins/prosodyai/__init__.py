@@ -33,7 +33,7 @@ from .gateway import (
     GatewayEnvError,
     gateway_ws_url,
 )
-from .realtime import RealtimeModel, RealtimeSession
+from .realtime import DuplexModel, DuplexSession
 from .version import __version__
 from .wire import ConversationEventType, GatewayEventType, RoomEventType
 
@@ -56,8 +56,8 @@ __all__ = [
     "NewSpeakerEvent",
     "RECONNECTABLE_ERRORS",
     "ReadyEvent",
-    "RealtimeModel",
-    "RealtimeSession",
+    "DuplexModel",
+    "DuplexSession",
     "SpeakerChangeEvent",
     "StateDeltaEvent",
     "TextEvent",
