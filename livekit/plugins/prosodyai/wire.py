@@ -683,6 +683,9 @@ class RoomEventType(WireEventType):
 # state lanes are separate and may be associated only through explicit state.
 AGENT_SPEAKER_ID = "agent"
 
+# Caller words the deployment attributed to no speaker carry this label.
+UNKNOWN_SPEAKER_ID = "unknown"
+
 
 @dataclass(frozen=True)
 class AgentStateEvent(WireShape):

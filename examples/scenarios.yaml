@@ -16,6 +16,8 @@ scenarios:
       hear the caller, and it gives a short spoken answer about what it can help
       with. A call where the agent never speaks, or leaves the caller's question
       unanswered, is a fail.
+    userdata:
+      require_speaker_on_words: true
     tags:
       feature: conversation
 
@@ -35,5 +37,7 @@ scenarios:
       The agent does not state a name for the caller. Saying it does not know
       the caller's name, or asking for it, is a pass. Addressing the caller by
       any name, or guessing one, is a fail.
+    userdata:
+      require_speaker_on_words: true
     tags:
       feature: identity
