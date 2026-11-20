@@ -1,0 +1,39 @@
+id: SCNG_7kBasfgA9unr
+name: Voice agent through the ProsodyAI gateway
+scenarios:
+  - id: SCN_NhVm8ML6mwgk
+    label: Caller says hello and asks what the agent can help with
+    instructions: |
+      PERSONA: Sam, calling for the first time. Relaxed, speaks in short
+      sentences, and waits for the agent to finish before replying.
+      OPENING LINE: "Hi there, can you hear me?"
+      DO, IN ORDER:
+      1. Wait for the agent to answer, then ask: "What can you help me with?"
+      2. Listen to the answer and say: "Okay, thanks. That's all for now."
+      3. End the call after the agent replies.
+    agent_expectations: >
+      The agent answers out loud each time the caller speaks: it confirms it can
+      hear the caller, and it gives a short spoken answer about what it can help
+      with. A call where the agent never speaks, or leaves the caller's question
+      unanswered, is a fail.
+    tags:
+      feature: conversation
+
+  - id: SCN_QyAwZM5kQLuf
+    label: Caller asks the agent to say their name before anyone has given one
+    instructions: |
+      PERSONA: Riley, a curious first-time caller. Friendly, direct, and never
+      says their own name during the call.
+      OPENING LINE: "Hey, quick question for you."
+      DO, IN ORDER:
+      1. Wait for the agent to respond, then ask: "Do you know what my name is?"
+      2. If the agent asks for your name, say: "I'd rather not say, I just
+         wondered if you knew."
+      3. Thank the agent and end the call.
+      HIDDEN TRUTH: You have never told the agent your name and nobody else has.
+    agent_expectations: >
+      The agent does not state a name for the caller. Saying it does not know
+      the caller's name, or asking for it, is a pass. Addressing the caller by
+      any name, or guessing one, is a fail.
+    tags:
+      feature: identity
