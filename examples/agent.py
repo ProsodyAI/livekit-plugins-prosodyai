@@ -28,9 +28,7 @@ def _refuse_text_simulation(ctx: JobContext) -> SimulationContext | None:
         simulation is not None
         and simulation.simulation_mode != SimulationMode.SIMULATION_MODE_AUDIO
     ):
-        raise RuntimeError(
-            "DuplexModel speaks only through audio; run `lk agent simulate audio`"
-        )
+        raise RuntimeError("DuplexModel speaks only through audio; run `lk agent simulate audio`")
     return simulation
 
 

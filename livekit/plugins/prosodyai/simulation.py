@@ -69,10 +69,7 @@ def attribution_failure(
         ):
             unattributed.extend(_words(event))
     if unattributed:
-        return (
-            f"{len(unattributed)} caller words arrived with no speaker: "
-            f"{unattributed!r}"
-        )
+        return f"{len(unattributed)} caller words arrived with no speaker: {unattributed!r}"
     return None
 
 

@@ -25,9 +25,7 @@ def test_attributed_caller_words_pass() -> None:
 
 
 def test_caller_words_without_a_speaker_fail() -> None:
-    reason = attribution_failure(
-        [_transcript(None, "Dude, so")], require_speaker_on_words=True
-    )
+    reason = attribution_failure([_transcript(None, "Dude, so")], require_speaker_on_words=True)
     assert reason is not None
     assert "Dude, so" in reason
 
