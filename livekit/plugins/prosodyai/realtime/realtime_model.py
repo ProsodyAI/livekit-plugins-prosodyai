@@ -231,9 +231,7 @@ class DuplexSession(llm.DuplexSession[WireEventType]):
         # The room hears every delta, interim words included. The session's
         # transcription is the whole words: an interim is replaced, not said.
         self._emit_plugin(event.TYPE, event)
-        text = " ".join(
-            delta.text for delta in event.deltas if delta.final and delta.text
-        ).strip()
+        text = " ".join(delta.text for delta in event.deltas if delta.final and delta.text).strip()
         if not text:
             return
         self.emit(
