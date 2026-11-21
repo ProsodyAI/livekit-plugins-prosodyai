@@ -712,11 +712,19 @@ class TextEvent(WireShape):
 
 @dataclass(frozen=True)
 class TranscriptDelta(WireShape):
-    """One committed span of a speaker's words, times in their own audio."""
+    """One span of a speaker's words, times in their own audio.
+
+    A final delta is whole words and never changes. An interim delta
+    (``final`` false) is the word still being spoken, as far as the decoder
+    has it: it replaces the stream's previous interim, and the stream's next
+    final delta supersedes it. A consumer that keeps a transcript keeps the
+    finals; one that renders live shows the interim until its final lands.
+    """
 
     text: str
     start_ms: int
     end_ms: int
+    final: bool = True
 
 
 @dataclass(frozen=True)

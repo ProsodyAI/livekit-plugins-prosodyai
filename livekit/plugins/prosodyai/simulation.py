@@ -29,10 +29,12 @@ class SimulationTranscripts:
 
 
 def _words(event: Mapping[str, Any]) -> list[str]:
+    """The event's whole words. An interim delta is a word still forming and
+    is replaced by its final, so it is not graded."""
     return [
         str(delta["text"])
         for delta in event.get("deltas") or ()
-        if isinstance(delta, Mapping) and delta.get("text")
+        if isinstance(delta, Mapping) and delta.get("text") and delta.get("final") is not False
     ]
 
 
