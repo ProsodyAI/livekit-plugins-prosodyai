@@ -42,7 +42,9 @@ TRANSCRIPT = {
     "speaker_id": "speaker_0",
     "deltas": [
         {"text": "hello", "start_ms": 0, "end_ms": 320},
-        {"text": "there", "start_ms": 320, "end_ms": 640},
+        {"text": "there", "start_ms": 320, "end_ms": 640, "final": True},
+        # The word still forming when the frame was sent: its final replaces it.
+        {"text": "every", "start_ms": 640, "end_ms": 960, "final": False},
     ],
 }
 
@@ -128,6 +130,8 @@ async def test_full_duplex_session_against_the_wire_protocol(monkeypatch):
 
         session = model.session()
         session.on("transcript_delta", spoken.put_nowait)
+        heard: asyncio.Queue = asyncio.Queue()
+        session.on("input_audio_transcription_completed", heard.put_nowait)
 
         async def _drain_audio() -> None:
             async for item in session.audio_stream:
@@ -161,7 +165,17 @@ async def test_full_duplex_session_against_the_wire_protocol(monkeypatch):
 
         transcript: TranscriptEvent = await asyncio.wait_for(transcripts.get(), timeout=10.0)
         assert transcript.speaker_id == "speaker_0"
-        assert [delta.text for delta in transcript.deltas] == ["hello", "there"]
+        # The room hears every delta with whether it is final; a delta with
+        # no flag came from a gateway that only sent whole words.
+        assert [(delta.text, delta.final) for delta in transcript.deltas] == [
+            ("hello", True),
+            ("there", True),
+            ("every", False),
+        ]
+        # The session's transcription is the whole words only.
+        completed = await asyncio.wait_for(heard.get(), timeout=10.0)
+        assert completed.transcript == "hello there"
+        assert completed.is_final is True
 
         change: GatewaySpeakerChangeEvent = await asyncio.wait_for(
             speaker_changes.get(), timeout=10.0

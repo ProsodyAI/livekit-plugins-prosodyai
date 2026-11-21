@@ -42,6 +42,21 @@ def test_unattributed_label_is_not_a_speaker() -> None:
     assert reason.startswith("2 caller words")
 
 
+def test_a_word_still_forming_is_not_graded() -> None:
+    """An interim delta is replaced by its final, which carries the speaker
+    the interval settled on; grading the interim would fail a run on a word
+    nobody was shown as said."""
+    forming = TranscriptEvent(
+        speaker_id="speaker_0",
+        deltas=(TranscriptDelta(text="every", start_ms=0, end_ms=560, final=False),),
+    ).to_dict()
+    forming["speaker_id"] = UNKNOWN_SPEAKER_ID
+    whole = _transcript("speaker_0", "everyone")
+    assert attribution_failure([forming, whole], require_speaker_on_words=True) is None
+    # Interim words alone are no caller words at all.
+    assert attribution_failure([forming], require_speaker_on_words=True) is not None
+
+
 def test_the_agent_line_is_not_a_caller() -> None:
     reason = attribution_failure(
         [_transcript(AGENT_SPEAKER_ID, "Hello, this is Jarvis.")],
