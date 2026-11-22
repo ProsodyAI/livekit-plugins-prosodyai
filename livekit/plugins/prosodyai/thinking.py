@@ -11,12 +11,11 @@ they produced. That is how a model is fixed for one customer in minutes.
 from __future__ import annotations
 
 import logging
-from enum import StrEnum
 from typing import Annotated, Any, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
-from .tracks import Intent, Rule
+from .tracks import Intent, Rule, StrEnum
 
 logger = logging.getLogger(__name__)
 

@@ -21,11 +21,12 @@ import weakref
 from collections.abc import AsyncIterator, Iterator, Sequence
 from dataclasses import dataclass
 
+from pydantic import BaseModel
+
 from livekit import rtc
 from livekit.agents import llm, utils
 from livekit.agents.types import NOT_GIVEN, NotGivenOr
 from livekit.agents.utils import is_given
-from pydantic import BaseModel
 
 from ..bridge import FullDuplexBridge
 from ..events import (
@@ -38,6 +39,7 @@ from ..events import (
     TurnBoundaryEvent,
 )
 from ..gateway import SAMPLE_RATE, GatewayConnection
+from ..log import logger
 from ..thinking import (
     ClientControlType,
     RulesUpdate,
@@ -47,7 +49,6 @@ from ..thinking import (
     ToolsUpdate,
 )
 from ..tracks import Intent, Rule
-from ..log import logger
 from ..wire import (
     ConversationEventType,
     GatewayEventType,

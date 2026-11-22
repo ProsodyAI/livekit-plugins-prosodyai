@@ -22,11 +22,22 @@ those until the next pass takes them.
 
 from __future__ import annotations
 
+import sys
 import threading
-from enum import StrEnum
 from typing import Any, Mapping, Optional, Protocol, Sequence
 
 from pydantic import BaseModel, ConfigDict
+
+if sys.version_info >= (3, 11):
+    from enum import StrEnum
+else:
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        """``enum.StrEnum`` for Python 3.10, which the LiveKit plugin supports."""
+
+        def __str__(self) -> str:
+            return str(self.value)
 
 
 class Track(StrEnum):
