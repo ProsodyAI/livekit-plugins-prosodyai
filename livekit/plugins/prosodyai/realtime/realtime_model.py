@@ -15,18 +15,21 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import time
 import weakref
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Sequence
 from dataclasses import dataclass
 
 from livekit import rtc
 from livekit.agents import llm, utils
 from livekit.agents.types import NOT_GIVEN, NotGivenOr
 from livekit.agents.utils import is_given
+from pydantic import BaseModel
 
 from ..bridge import FullDuplexBridge
 from ..events import (
+    AgentToolStatusEvent,
     BargeInEvent,
     GatewayEvent,
     ReadyEvent,
@@ -35,8 +38,23 @@ from ..events import (
     TurnBoundaryEvent,
 )
 from ..gateway import SAMPLE_RATE, GatewayConnection
+from ..thinking import (
+    ClientControlType,
+    RulesUpdate,
+    ThoughtWrite,
+    ToolDefinition,
+    ToolResult,
+    ToolsUpdate,
+)
+from ..tracks import Intent, Rule
 from ..log import logger
-from ..wire import ConversationEventType, GatewayEventType, RoomEventType, WireEventType
+from ..wire import (
+    ConversationEventType,
+    GatewayEventType,
+    RoomEventType,
+    ToolCallStatus,
+    WireEventType,
+)
 
 NUM_CHANNELS = 1
 
@@ -77,10 +95,12 @@ class DuplexModel(llm.DuplexModel, rtc.EventEmitter[WireEventType]):
             self,
             capabilities=llm.DuplexCapabilities(
                 user_transcription=True,
-                auto_tool_reply_generation=False,
-                mutable_chat_context=False,
-                mutable_instructions=False,
-                mutable_tools=False,
+                # A tool's result is a thought, and the model speaks from a
+                # thought on its own.
+                auto_tool_reply_generation=True,
+                mutable_chat_context=True,
+                mutable_instructions=True,
+                mutable_tools=True,
             ),
         )
         rtc.EventEmitter.__init__(self)
@@ -124,6 +144,9 @@ class DuplexSession(llm.DuplexSession[WireEventType]):
         self._bridge_task: asyncio.Task[None] | None = None
         self._input_resampler: rtc.AudioResampler | None = None
         self._closed = False
+        #: Thinking-track messages, in order, sent once the call is open.
+        self._controls = utils.aio.Chan[BaseModel]()
+        self._controls_task: asyncio.Task[None] | None = None
 
     def _emit_plugin(self, name: WireEventType, event: object) -> None:
         self.emit(name, event)
@@ -168,6 +191,38 @@ class DuplexSession(llm.DuplexSession[WireEventType]):
             publish_sample_rate=SAMPLE_RATE,
         )
         self._bridge_task = asyncio.create_task(self._run_bridge(), name="prosodyai-duplex")
+        self._controls_task = asyncio.create_task(
+            self._send_controls(self._bridge), name="prosodyai-thinking"
+        )
+
+    @utils.log_exceptions(logger=logger)
+    async def _send_controls(self, bridge: FullDuplexBridge) -> None:
+        async for control in self._controls:
+            await bridge.send_control(control)
+
+    def _control(self, control: BaseModel) -> None:
+        if not self._closed:
+            with contextlib.suppress(utils.aio.ChanClosed):
+                self._controls.send_nowait(control)
+
+    # ------------------------------------------------------- thinking track
+
+    def think(self, text: str, *, say: bool = False) -> None:
+        """Tell the speech model something. It holds it as context, or with
+        ``say`` speaks it now."""
+        if text:
+            self._control(
+                ThoughtWrite(
+                    type=ClientControlType.THOUGHT,
+                    text=text,
+                    intent=Intent.SAY if say else Intent.KNOW,
+                )
+            )
+
+    def update_rules(self, rules: Sequence[Rule]) -> None:
+        """This call's standing rules: when the caller says this, the model
+        is told that. Replaces any earlier set."""
+        self._control(RulesUpdate(type=ClientControlType.RULES_UPDATE, rules=list(rules)))
 
     @utils.log_exceptions(logger=logger)
     async def _run_bridge(self) -> None:
@@ -223,6 +278,17 @@ class DuplexSession(llm.DuplexSession[WireEventType]):
         if isinstance(event, TranscriptEvent):
             self._on_transcript(event)
             return
+        if isinstance(event, AgentToolStatusEvent) and event.status is ToolCallStatus.STARTED:
+            # The call decided one of this agent's tools should run. LiveKit
+            # runs it and hands the output back through ``_append_items``.
+            self.emit(
+                "function_call",
+                llm.FunctionCall(
+                    call_id=event.call_id,
+                    name=event.name,
+                    arguments=json.dumps(event.arguments),
+                ),
+            )
         if event.TYPE is None:
             return
         self._emit_plugin(event.TYPE, event)
@@ -256,14 +322,47 @@ class DuplexSession(llm.DuplexSession[WireEventType]):
         return self._tools
 
     async def _update_instructions(self, instructions: str) -> None:
-        del instructions
-        logger.debug("instructions ignored; the gateway owns priming")
+        self.think(instructions)
 
     async def _append_items(self, items: list[llm.ChatItem]) -> None:
-        del items
+        for item in items:
+            if isinstance(item, llm.FunctionCallOutput):
+                self._control(
+                    ToolResult(
+                        type=ClientControlType.TOOL_RESULT,
+                        call_id=item.call_id,
+                        output="" if item.is_error else item.output,
+                        error=item.output if item.is_error else None,
+                    )
+                )
+            elif isinstance(item, llm.ChatMessage) and item.text_content:
+                self.think(item.text_content)
 
     async def _update_tools(self, tools: list[llm.Tool]) -> None:
         self._tools = llm.ToolContext(tools)
+        self._control(
+            ToolsUpdate(
+                type=ClientControlType.TOOLS_UPDATE,
+                tools=[
+                    ToolDefinition.model_validate(
+                        llm.utils.build_legacy_openai_schema(tool, internally_tagged=True)
+                    )
+                    for tool in self._tools.function_tools.values()
+                ],
+            )
+        )
+
+    def _generate_reply(
+        self,
+        *,
+        instructions: NotGivenOr[str] = NOT_GIVEN,
+        tool_choice: NotGivenOr[llm.ToolChoice] = NOT_GIVEN,
+        tools: NotGivenOr[list[llm.Tool]] = NOT_GIVEN,
+    ) -> None:
+        """Ask the model to speak now, from these instructions."""
+        del tool_choice, tools
+        if is_given(instructions):
+            self.think(instructions, say=True)
 
     def _update_options(
         self, *, tool_choice: NotGivenOr[llm.ToolChoice | None] = NOT_GIVEN
@@ -278,6 +377,9 @@ class DuplexSession(llm.DuplexSession[WireEventType]):
         if self._bridge is not None:
             self._bridge.close()
         self._uplink.close()
+        self._controls.close()
+        if self._controls_task is not None:
+            await utils.aio.cancel_and_wait(self._controls_task)
         if self._bridge_task is not None:
             await utils.aio.cancel_and_wait(self._bridge_task)
         self._audio_ch.close()

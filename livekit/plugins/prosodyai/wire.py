@@ -594,7 +594,7 @@ class GatewayAgentToolEvent(WireShape):
     """``prosodyai.agent_tool``: one completed capability, shown to the caller.
 
     The speech model's monologue asked for the capability, the gateway ran
-    it, and ``result`` is the clause Jarvis was given to say. The reading
+    it, and ``result`` is the clause the agent was given to say. The reading
     half of the deliberation is the monologue itself, which reaches the
     caller as the agent's own transcript.
     """
@@ -678,7 +678,7 @@ class RoomEventType(WireEventType):
     MOMENT = "prosodyai.moment"
 
 
-# Jarvis is the other party on the call, so his words carry this fixed label.
+# The agent is the other party on the call, so its words carry this fixed label.
 # A caller ``speaker_id`` names a session-local Sortformer surface. Identity
 # state lanes are separate and may be associated only through explicit state.
 AGENT_SPEAKER_ID = "agent"
