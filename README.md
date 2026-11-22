@@ -42,6 +42,7 @@ Tools are ordinary LiveKit function tools on the agent. The call decides when on
 ```python
 from livekit.agents import Agent, function_tool
 
+
 class Support(Agent):
     def __init__(self) -> None:
         super().__init__(instructions="You are the support line for Acme.")
@@ -70,12 +71,14 @@ Give the call standing rules: when the caller says this, the model is told that.
 ```python
 from livekit.plugins.prosodyai import Rule, Thought
 
-duplex.update_rules([
-    Rule(
-        hears=("refund", "money back"),
-        thought=Thought(source="policy", text="Refunds are available within 30 days only."),
-    ),
-])
+duplex.update_rules(
+    [
+        Rule(
+            hears=("refund", "money back"),
+            thought=Thought(source="policy", text="Refunds are available within 30 days only."),
+        ),
+    ]
+)
 ```
 
 `session.generate_reply(instructions=...)` also works, and is the same as `think(..., say=True)`.
@@ -86,6 +89,7 @@ The model commits a caller to a person when it recognises their voice. `speaker_
 
 ```python
 model = prosodyai.DuplexModel()
+
 
 @model.on(prosodyai.RoomEventType.IDENTITY)
 def on_identity(event: prosodyai.IdentityEvent) -> None:
