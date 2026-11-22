@@ -8,10 +8,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
+from pydantic import BaseModel
 from websockets.asyncio.client import ClientConnection, connect as ws_connect
 from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
 from .frames import GatewayAudio, GatewayControlFrame
+from .wire import KIND_CONTROL
 
 if TYPE_CHECKING:
     import sphn
@@ -125,6 +127,14 @@ class GatewaySession:
         self._writer = sphn.OpusStreamWriter(SAMPLE_RATE)
         self._reader = sphn.OpusStreamReader(SAMPLE_RATE)
         self._pending_uplink = np.zeros(0, dtype=np.float32)
+
+    async def send_control(self, control: BaseModel) -> None:
+        """One thinking-track message for the call: a thought, rules, tools,
+        or what a tool returned."""
+        socket = self._socket
+        if socket is None:
+            return
+        await socket.send(bytes([KIND_CONTROL]) + control.model_dump_json().encode("utf-8"))
 
     async def send_audio(self, samples: np.ndarray) -> None:
         socket, writer = self._socket, self._writer

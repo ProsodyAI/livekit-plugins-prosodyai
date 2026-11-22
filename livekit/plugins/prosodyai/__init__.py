@@ -34,6 +34,7 @@ from .gateway import (
     gateway_ws_url,
 )
 from .realtime import DuplexModel, DuplexSession
+from .tracks import Intent, Rule, Thought
 from .version import __version__
 from .wire import ConversationEventType, GatewayEventType, RoomEventType
 
@@ -58,6 +59,9 @@ __all__ = [
     "ReadyEvent",
     "DuplexModel",
     "DuplexSession",
+    "Intent",
+    "Rule",
+    "Thought",
     "SpeakerChangeEvent",
     "StateDeltaEvent",
     "TextEvent",

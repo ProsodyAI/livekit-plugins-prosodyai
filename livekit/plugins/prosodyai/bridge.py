@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 
+from pydantic import BaseModel
+
 from .audio_resample import (
     float32_to_pcm16_le,
     pcm16_le_to_float32,
@@ -52,6 +54,11 @@ class FullDuplexBridge:
     @property
     def ready(self) -> asyncio.Event:
         return self._ready
+
+    async def send_control(self, control: BaseModel) -> None:
+        """One thinking-track message, once the call is open."""
+        await self._ready.wait()
+        await self._session.send_control(control)
 
     async def _send_uplink(self, uplink_pcm16: AsyncIterator[bytes]) -> None:
         await self._ready.wait()
