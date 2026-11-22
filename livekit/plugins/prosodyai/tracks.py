@@ -103,6 +103,13 @@ class Score:
     def order(self) -> tuple[Stage, ...]:
         return self._order
 
+    def seat(self, slot: int, tenant: str) -> None:
+        """Tell each stage that keeps tenants apart whose session this slot holds."""
+        for stage in self._order:
+            seat = getattr(stage, "seat", None)
+            if seat is not None:
+                seat(slot, tenant)
+
     def start(self, slot: int) -> None:
         for stage in self._order:
             stage.start(slot)
