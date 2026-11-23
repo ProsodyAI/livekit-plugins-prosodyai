@@ -55,9 +55,7 @@ class Support(Agent):
 
 ## Steering the model
 
-A full-duplex model does not wait for a turn, so you do not prompt it per turn. You tell it things while it talks. The session has three ways.
-
-Tell it something it should know, or something it should say now:
+A full-duplex model does not wait for a turn, so you do not prompt it per turn. You tell it things while it talks: something it should know, or something it should say now.
 
 ```python
 duplex = session.current_agent.duplex_session
@@ -66,22 +64,73 @@ duplex.think("The caller is a premium customer.")
 duplex.think("Tell the caller their refund was approved.", say=True)
 ```
 
-Give the call standing rules: when the caller says this, the model is told that.
+`session.generate_reply(instructions=...)` also works, and is the same as `think(..., say=True)`.
+
+## Policies
+
+Standing behaviour is a policy on the account, and a policy is objects: rules over what the caller meant, never over the words they used. Its situations come from the account's directives. The classifier trained on them and a semantic parse of the caller's words recognise each one by its meaning, so "please cancel my account" and "can you cancel my account" are one situation, and "don't cancel my account" is not, though it holds the same words. Every action a rule proposes is judged against the call's state before it reaches the speech model.
 
 ```python
-from livekit.plugins.prosodyai import Rule, Thought
-
-duplex.update_rules(
-    [
-        Rule(
-            hears=("refund", "money back"),
-            thought=Thought(source="policy", text="Refunds are available within 30 days only."),
-        ),
-    ]
+from livekit.plugins.prosodyai.dialogue import (
+    Action,
+    Condition,
+    Delivery,
+    DialoguePolicy,
+    Entails,
+    Established,
+    Inject,
+    Perform,
+    Realization,
+    Requirement,
+    Rule,
+    Scope,
 )
+from livekit.plugins.prosodyai.directives import ListDirectivesResponse
+
+
+def support_policy(listing: ListDirectivesResponse) -> DialoguePolicy:
+    meanings = {s.label: s.meaning for d in listing.directives for s in d.situations()}
+    cancel = meanings["cancel_account"]
+    asked_to_cancel = Condition(entails=Entails(situation=cancel, scope=Scope.MOVE))
+    return DialoguePolicy(
+        id="support",
+        rules=(
+            Rule(
+                id="acct:cancel_terms",
+                when=(asked_to_cancel,),
+                then=(
+                    Action(
+                        inject=Inject(
+                            delivery=Delivery.KNOW,
+                            realization=Realization(
+                                text="Cancellation takes effect at the end of the billing period."
+                            ),
+                        )
+                    ),
+                ),
+                once=True,
+            ),
+            Rule(
+                id="acct:cancel",
+                when=(asked_to_cancel,),
+                then=(
+                    Action(
+                        perform=Perform(
+                            tool="cancel_account",
+                            requirements=(
+                                Requirement(established=Established(proposition=cancel)),
+                            ),
+                        )
+                    ),
+                ),
+            ),
+        ),
+    )
 ```
 
-`session.generate_reply(instructions=...)` also works, and is the same as `think(..., say=True)`.
+`listing` is the body of `GET /v1/accounts/{account}/directives`, read with `ListDirectivesResponse.model_validate_json`. The first rule tells the model a fact the first time the caller asks to cancel. The second runs the agent's `cancel_account` tool, and only once the caller's request is established.
+
+Put the policy with `PUT /v1/accounts/{account}/policies/support`, the body `support_policy(listing).json_bytes()`, and name `support` as the agent configuration's `dialogue_policy`. The gateway checks every term against the account's lexicon before it accepts a policy, and each call keeps the version it started with.
 
 ## Who is speaking
 

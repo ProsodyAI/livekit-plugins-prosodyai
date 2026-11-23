@@ -199,43 +199,6 @@ def _ordered(stages: Sequence[Stage], inputs: frozenset[Track]) -> tuple[Stage, 
     return tuple(ordered)
 
 
-class Rule(BaseModel):
-    """One customer's fix: when the caller says this, the model is told that.
-
-    ``hears`` are phrases; any one of them in the caller's committed words
-    fires the rule. This is how a model is corrected for one customer
-    without retraining it: the right sentence, in its context, at the moment
-    it matters.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    hears: tuple[str, ...]
-    thought: Thought
-    #: Fire on the first match only; a fact told once stays in context.
-    once: bool = True
-
-
-class Rules:
-    """One session's rules, read against the caller's words as they commit."""
-
-    def __init__(self, rules: Sequence[Rule]) -> None:
-        self._rules = list(rules)
-        self._fired: set[int] = set()
-
-    def on_words(self, text: str) -> tuple[Thought, ...]:
-        """The thoughts the caller's words call for."""
-        heard = text.casefold()
-        thoughts: list[Thought] = []
-        for index, rule in enumerate(self._rules):
-            if rule.once and index in self._fired:
-                continue
-            if any(phrase.casefold() in heard for phrase in rule.hears if phrase):
-                self._fired.add(index)
-                thoughts.append(rule.thought)
-        return tuple(thoughts)
-
-
 class ThinkingTrack:
     """A session's thoughts from outside the pass, waiting for the next one.
 

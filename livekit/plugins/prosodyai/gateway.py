@@ -129,8 +129,8 @@ class GatewaySession:
         self._pending_uplink = np.zeros(0, dtype=np.float32)
 
     async def send_control(self, control: BaseModel) -> None:
-        """One thinking-track message for the call: a thought, rules, tools,
-        or what a tool returned."""
+        """One thinking-track message for the call: a thought, tools, or what a
+        tool returned."""
         socket = self._socket
         if socket is None:
             return
