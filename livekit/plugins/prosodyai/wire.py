@@ -303,6 +303,8 @@ class ConversationEventType(WireEventType):
     TURN_BOUNDARY = "turn_boundary"
     BARGE_IN = "barge_in"
     ENTITY_SPAN = "entity_span"
+    INTONATION_PHRASE = "intonation_phrase"
+    PROMINENCE = "prominence"
 
 
 @dataclass(frozen=True)
@@ -382,11 +384,39 @@ class ConversationEntitySpanEvent(WireShape):
     kind: str
 
 
+class IntonationTerminal(WireEventType):
+    FALL = "fall"
+    RISE = "rise"
+    LEVEL = "level"
+
+
+@dataclass(frozen=True)
+class ConversationIntonationPhraseEvent(WireShape):
+    TYPE: ClassVar[ConversationEventType] = ConversationEventType.INTONATION_PHRASE
+
+    frame_ms: int
+    commit_ms: int
+    duration_ms: int
+    terminal: IntonationTerminal
+    glide_st: float
+
+
+@dataclass(frozen=True)
+class ConversationProminenceEvent(WireShape):
+    TYPE: ClassVar[ConversationEventType] = ConversationEventType.PROMINENCE
+
+    frame_ms: int
+    commit_ms: int
+    duration_ms: int
+
+
 ConversationWireEvent = Union[
     ConversationStateDeltaEvent,
     ConversationTurnBoundaryEvent,
     ConversationBargeInEvent,
     ConversationEntitySpanEvent,
+    ConversationIntonationPhraseEvent,
+    ConversationProminenceEvent,
 ]
 """One committed conversation event off the prediction envelope, decoded by
 the learned event deciders with carried state. The model is the only author."""
@@ -725,6 +755,8 @@ class TranscriptDelta(WireShape):
     start_ms: int
     end_ms: int
     final: bool = True
+    #: The speech slot's frame whose audio completed the word; None off the slot.
+    frame: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -863,6 +895,8 @@ ROOM_TOPIC_EVENTS: tuple[type, ...] = (
     ConversationTurnBoundaryEvent,
     ConversationBargeInEvent,
     ConversationEntitySpanEvent,
+    ConversationIntonationPhraseEvent,
+    ConversationProminenceEvent,
 )
 """Every shape republished on the LiveKit data topic, in the order a client
 reads them: the worker's own announcement, the model's monologue, the

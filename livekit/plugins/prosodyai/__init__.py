@@ -16,8 +16,11 @@ from .events import (
     GatewayEvent,
     IdentityEvent,
     IdentityResolvedEvent,
+    IntonationPhraseEvent,
+    IntonationTerminal,
     ModelEvent,
     NewSpeakerEvent,
+    ProminenceEvent,
     ReadyEvent,
     SpeakerChangeEvent,
     StateDeltaEvent,
@@ -34,7 +37,7 @@ from .gateway import (
     gateway_ws_url,
 )
 from .realtime import DuplexModel, DuplexSession
-from .tracks import Intent, Rule, Thought
+from .tracks import Intent, Thought
 from .version import __version__
 from .wire import ConversationEventType, GatewayEventType, RoomEventType
 
@@ -53,14 +56,16 @@ __all__ = [
     "GatewayEvent",
     "IdentityEvent",
     "IdentityResolvedEvent",
+    "IntonationPhraseEvent",
+    "IntonationTerminal",
     "ModelEvent",
     "NewSpeakerEvent",
+    "ProminenceEvent",
     "RECONNECTABLE_ERRORS",
     "ReadyEvent",
     "DuplexModel",
     "DuplexSession",
     "Intent",
-    "Rule",
     "Thought",
     "SpeakerChangeEvent",
     "StateDeltaEvent",

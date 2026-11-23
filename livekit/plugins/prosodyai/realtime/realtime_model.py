@@ -18,7 +18,7 @@ import contextlib
 import json
 import time
 import weakref
-from collections.abc import AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 
 from pydantic import BaseModel
@@ -42,13 +42,12 @@ from ..gateway import SAMPLE_RATE, GatewayConnection
 from ..log import logger
 from ..thinking import (
     ClientControlType,
-    RulesUpdate,
     ThoughtWrite,
     ToolDefinition,
     ToolResult,
     ToolsUpdate,
 )
-from ..tracks import Intent, Rule
+from ..tracks import Intent
 from ..wire import (
     ConversationEventType,
     GatewayEventType,
@@ -219,11 +218,6 @@ class DuplexSession(llm.DuplexSession[WireEventType]):
                     intent=Intent.SAY if say else Intent.KNOW,
                 )
             )
-
-    def update_rules(self, rules: Sequence[Rule]) -> None:
-        """This call's standing rules: when the caller says this, the model
-        is told that. Replaces any earlier set."""
-        self._control(RulesUpdate(type=ClientControlType.RULES_UPDATE, rules=list(rules)))
 
     @utils.log_exceptions(logger=logger)
     async def _run_bridge(self) -> None:

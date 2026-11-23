@@ -1,13 +1,3 @@
-"""The thinking track on a call: what the speech model is told while it converses.
-
-The speech model listens and speaks. Everything else reaches it as a
-thought (``tracks.py``): text written into its context that it then
-speaks from. On a call the thoughts come from the caller's agent, which
-knows the customer: it writes a thought outright, declares rules ("when the
-caller says this, tell the model that"), or declares tools and returns what
-they produced. That is how a model is fixed for one customer in minutes.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -15,7 +5,7 @@ from typing import Annotated, Any, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
-from .tracks import Intent, Rule, StrEnum
+from .tracks import Intent, StrEnum
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +14,6 @@ class ClientControlType(StrEnum):
     """What a caller's agent sends on the control kind."""
 
     THOUGHT = "thought"
-    RULES_UPDATE = "rules.update"
     TOOLS_UPDATE = "tools.update"
     TOOL_RESULT = "tool.result"
 
@@ -42,15 +31,10 @@ class ThoughtWrite(BaseModel):
     """The agent tells the speech model something, now."""
 
     type: Literal[ClientControlType.THOUGHT]
+    #: The slot drops a thought whose id it already saw this session.
+    id: Optional[str] = None
     text: str
     intent: Intent = Intent.KNOW
-
-
-class RulesUpdate(BaseModel):
-    """The agent's standing rules for this call; replaces any earlier set."""
-
-    type: Literal[ClientControlType.RULES_UPDATE]
-    rules: list[Rule]
 
 
 class ToolsUpdate(BaseModel):
@@ -69,7 +53,7 @@ class ToolResult(BaseModel):
     error: Optional[str] = None
 
 
-ClientControl = Union[ThoughtWrite, RulesUpdate, ToolsUpdate, ToolResult]
+ClientControl = Union[ThoughtWrite, ToolsUpdate, ToolResult]
 _CLIENT_CONTROL: TypeAdapter[ClientControl] = TypeAdapter(
     Annotated[ClientControl, Field(discriminator="type")]
 )
