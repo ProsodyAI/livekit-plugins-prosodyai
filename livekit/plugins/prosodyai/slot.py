@@ -34,6 +34,11 @@ class SlotControlType(StrEnum):
     SAY_CANCEL = "say.cancel"
     READ = "directive.read"
     END = "slot.end"
+    REASON = "reason.request"
+    REASON_DELTA = "reason.delta"
+    REASON_DONE = "reason.done"
+    REASON_ERROR = "reason.error"
+    REASON_CANCEL = "reason.cancel"
 
 
 class Refusal(StrEnum):
@@ -178,6 +183,39 @@ class Firing(_Wire):
     frame: int
 
 
+class ReasonRequest(_Wire):
+    type: Literal[SlotControlType.REASON] = SlotControlType.REASON
+    id: str
+    body: dict[str, Any]
+
+
+class ReasonDelta(_Wire):
+    type: Literal[SlotControlType.REASON_DELTA] = SlotControlType.REASON_DELTA
+    id: str
+    content: str
+
+
+class ReasonDone(_Wire):
+    type: Literal[SlotControlType.REASON_DONE] = SlotControlType.REASON_DONE
+    id: str
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cached_tokens: int = 0
+    finish: str = ""
+
+
+class ReasonError(_Wire):
+    type: Literal[SlotControlType.REASON_ERROR] = SlotControlType.REASON_ERROR
+    id: str
+    code: str
+    message: str = ""
+
+
+class ReasonCancel(_Wire):
+    type: Literal[SlotControlType.REASON_CANCEL] = SlotControlType.REASON_CANCEL
+    id: str
+
+
 class SlotUsage(_Wire):
     type: Literal[SlotControlType.USAGE] = SlotControlType.USAGE
     frames: int
@@ -223,6 +261,11 @@ SlotControl = Union[
     SayCancel,
     DirectiveRead,
     SlotEnd,
+    ReasonRequest,
+    ReasonDelta,
+    ReasonDone,
+    ReasonError,
+    ReasonCancel,
 ]
 _SLOT_CONTROL: TypeAdapter[SlotControl] = TypeAdapter(
     Annotated[SlotControl, Field(discriminator="type")]
