@@ -59,7 +59,7 @@ def test_a_word_still_forming_is_not_graded() -> None:
 
 def test_the_agent_line_is_not_a_caller() -> None:
     reason = attribution_failure(
-        [_transcript(AGENT_SPEAKER_ID, "Hello, this is Jarvis.")],
+        [_transcript(AGENT_SPEAKER_ID, "Hello, this is Prosody.")],
         require_speaker_on_words=True,
     )
     assert reason == "duplex simulation produced no caller words"
