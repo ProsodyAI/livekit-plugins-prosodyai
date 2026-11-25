@@ -91,9 +91,7 @@ def caller_words(events: list[Mapping[str, Any]]) -> list[_Word]:
                 floor = event
                 spans.append((0, onset, speaker))
                 _relabel(words, 0, onset, speaker)
-            elif floor.get("speaker_id") == speaker or onset <= int(
-                floor.get("timestamp_ms") or 0
-            ):
+            elif floor.get("speaker_id") == speaker or onset <= int(floor.get("timestamp_ms") or 0):
                 continue
             else:
                 previous = (
@@ -105,10 +103,7 @@ def caller_words(events: list[Mapping[str, Any]]) -> list[_Word]:
                 spans.append(previous)
                 _relabel(words, *previous)
             continue
-        if (
-            kind != RoomEventType.TRANSCRIPT.value
-            or event.get("speaker_id") == AGENT_SPEAKER_ID
-        ):
+        if kind != RoomEventType.TRANSCRIPT.value or event.get("speaker_id") == AGENT_SPEAKER_ID:
             continue
         speaker_id = event.get("speaker_id")
         for delta in event.get("deltas") or ():
