@@ -41,13 +41,14 @@ class FullDuplexBridge:
         api_key: str = "",
         room_sample_rate: int = 16_000,
         publish_sample_rate: int = SAMPLE_RATE,
+        call_binding: str | None = None,
     ) -> None:
         if not url or not api_key:
             resolved = GatewayConnection.from_environment()
             url, api_key = resolved.url, resolved.api_key
         self._room_sample_rate = room_sample_rate
         self._publish_sample_rate = publish_sample_rate
-        self._session = GatewaySession(url=url, api_key=api_key)
+        self._session = GatewaySession(url=url, api_key=api_key, call_binding=call_binding)
         self._ready = asyncio.Event()
         self._closed = False
 
