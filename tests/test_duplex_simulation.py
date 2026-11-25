@@ -30,16 +30,32 @@ def test_caller_words_without_a_speaker_fail() -> None:
     assert "Dude, so" in reason
 
 
-def test_unattributed_label_is_not_a_speaker() -> None:
+def test_a_run_before_any_voice_belongs_to_the_first_voice() -> None:
+    # Words the gateway emits before the tracker commits a lane arrive
+    # unattributed; no other voice held the floor, so they are the first voice's.
+    assert (
+        attribution_failure(
+            [
+                _transcript(UNKNOWN_SPEAKER_ID, "We", "do"),
+                _transcript("speaker_0", "so", "we"),
+            ],
+            require_speaker_on_words=True,
+        )
+        is None
+    )
+
+
+def test_a_run_between_two_voices_stays_unattributed() -> None:
     reason = attribution_failure(
         [
-            _transcript(UNKNOWN_SPEAKER_ID, "We", "do"),
-            _transcript("speaker_0", "so", "we"),
+            _transcript("speaker_0", "We", "do"),
+            _transcript(UNKNOWN_SPEAKER_ID, "so", "we"),
+            _transcript("speaker_1", "are", "so"),
         ],
         require_speaker_on_words=True,
     )
     assert reason is not None
-    assert reason.startswith("2 caller words")
+    assert "so" in reason
 
 
 def test_a_word_still_forming_is_not_graded() -> None:
