@@ -6,8 +6,9 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, Optional
 
-from livekit import rtc
 from pydantic import BaseModel, Field, ValidationError
+
+from livekit import rtc
 
 from .events import AgentToolStatusEvent, GatewayEvent
 from .thinking import ClientControlType, ToolDefinition, ToolResult, ToolsUpdate
