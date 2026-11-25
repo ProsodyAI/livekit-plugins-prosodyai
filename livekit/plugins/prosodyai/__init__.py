@@ -37,6 +37,15 @@ from .gateway import (
     gateway_ws_url,
 )
 from .realtime import DuplexModel, DuplexSession
+from .room_tools import (
+    ROOM_TOOL_METHOD_PREFIX,
+    ROOM_TOOLS_METHOD,
+    RoomToolManifest,
+    RoomToolReply,
+    RoomTools,
+    room_tool_method,
+)
+from .thinking import ToolDefinition, ToolResult, ToolsUpdate
 from .tracks import Intent, Thought
 from .version import __version__
 from .wire import ConversationEventType, GatewayEventType, RoomEventType
@@ -67,6 +76,15 @@ __all__ = [
     "DuplexSession",
     "Intent",
     "Thought",
+    "ROOM_TOOL_METHOD_PREFIX",
+    "ROOM_TOOLS_METHOD",
+    "RoomToolManifest",
+    "RoomToolReply",
+    "RoomTools",
+    "ToolDefinition",
+    "ToolResult",
+    "ToolsUpdate",
+    "room_tool_method",
     "SpeakerChangeEvent",
     "StateDeltaEvent",
     "TextEvent",
