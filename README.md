@@ -61,8 +61,8 @@ A page or device on the call can offer tools of its own over LiveKit RPC, and th
 from livekit.plugins.prosodyai import RoomTools
 
 tools = RoomTools(ctx.room, bridge.send_control)
-await tools.collect()          # once the gateway session is open
-tools.observe(event)           # for every gateway event the bridge yields
+await tools.collect()  # once the gateway session is open
+tools.observe(event)  # for every gateway event the bridge yields
 ```
 
 ## Steering the model
