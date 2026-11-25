@@ -23,6 +23,7 @@ FRAME_MS = 80
 FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS // 1000
 REALTIME_PATH = "/v1/realtime"
 API_KEY_HEADER = "x-api-key"
+CALL_BINDING_HEADER = "x-prosody-call-binding"
 DEFAULT_ORIGIN = "https://api.prosodyai.app"
 
 #: What a gateway restart looks like from a consumer: the live socket dropped
@@ -37,6 +38,7 @@ RECONNECTABLE_ERRORS: tuple[type[BaseException], ...] = (
 
 __all__ = [
     "API_KEY_HEADER",
+    "CALL_BINDING_HEADER",
     "DEFAULT_ORIGIN",
     "FRAME_MS",
     "FRAME_SAMPLES",
@@ -97,14 +99,23 @@ class GatewayConnection:
 class GatewaySession:
     """One ProsodyAI gateway socket."""
 
-    def __init__(self, *, url: str, api_key: str) -> None:
+    def __init__(self, *, url: str, api_key: str, call_binding: str | None = None) -> None:
         self._url = url
         self._api_key = api_key
+        # The gateway's signed word on whose call this is; a room's worker
+        # forwards it from the room dispatch and never reads it.
+        self._call_binding = call_binding
         self._connect_ctx = None
         self._socket: ClientConnection | None = None
         self._writer: sphn.OpusStreamWriter | None = None
         self._reader: sphn.OpusStreamReader | None = None
         self._pending_uplink = np.zeros(0, dtype=np.float32)
+
+    def _headers(self) -> dict[str, str]:
+        headers = {API_KEY_HEADER: self._api_key}
+        if self._call_binding:
+            headers[CALL_BINDING_HEADER] = self._call_binding
+        return headers
 
     async def open(self) -> None:
         try:
@@ -116,7 +127,7 @@ class GatewaySession:
             ) from exc
         connect_ctx = ws_connect(
             self._url,
-            additional_headers={API_KEY_HEADER: self._api_key},
+            additional_headers=self._headers(),
             max_size=16 * 1024 * 1024,
             open_timeout=120.0,
             ping_interval=None,
