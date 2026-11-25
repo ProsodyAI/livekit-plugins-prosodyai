@@ -53,6 +53,18 @@ class Support(Agent):
         return await orders.status(order_id)
 ```
 
+### Tools a participant offers
+
+A page or device on the call can offer tools of its own over LiveKit RPC, and the agent runs them where they live. The participant answers `prosodyai.tools` with a manifest (`{"tools": [{"name", "description", "parameters"}]}`) and serves each tool on `prosodyai.tool.<name>`, taking the arguments as a JSON payload and answering with `{"output": "..."}` or `{"error": "..."}`. `RoomTools` collects the manifests, forwards them to the call as its tool set, and when the call starts a tool, performs it on the participant that offered it and returns the reply. The TypeScript SDK's `registerRoomTools` is the participant side of the same contract.
+
+```python
+from livekit.plugins.prosodyai import RoomTools
+
+tools = RoomTools(ctx.room, bridge.send_control)
+await tools.collect()  # once the gateway session is open
+tools.observe(event)  # for every gateway event the bridge yields
+```
+
 ## Steering the model
 
 A full-duplex model does not wait for a turn, so you do not prompt it per turn. You tell it things while it talks: something it should know, or something it should say now.
