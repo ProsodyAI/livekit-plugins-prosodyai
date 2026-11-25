@@ -124,7 +124,30 @@ def caller_words(events: list[Mapping[str, Any]]) -> list[_Word]:
             words.append(_Word(str(delta["text"]), start_ms, end_ms, owner, committed))
         for span in spans:
             _relabel(words, *span)
-    return words
+    return _resolved(words)
+
+
+def _resolved(words: list[_Word]) -> list[_Word]:
+    """Resolve the unattributed runs the way a reader does: a run before any
+    voice belongs to the first voice after it, and a run between two spans of
+    the same voice belongs to that voice."""
+    ordered = sorted(words, key=lambda word: (word.start_ms, word.end_ms))
+    index = 0
+    while index < len(ordered):
+        if _known(ordered[index].speaker_id):
+            index += 1
+            continue
+        start = index
+        while index < len(ordered) and not _known(ordered[index].speaker_id):
+            index += 1
+        left = ordered[start - 1] if start > 0 else None
+        right = ordered[index] if index < len(ordered) else None
+        if right is None:
+            continue
+        if left is None or left.speaker_id == right.speaker_id:
+            for word in ordered[start:index]:
+                word.speaker_id = right.speaker_id
+    return ordered
 
 
 def attribution_failure(
