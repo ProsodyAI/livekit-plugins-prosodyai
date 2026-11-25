@@ -54,7 +54,11 @@ class _Word:
 
 
 def _known(speaker_id: Any) -> bool:
-    return isinstance(speaker_id, str) and bool(speaker_id.strip()) and speaker_id != UNKNOWN_SPEAKER_ID
+    return (
+        isinstance(speaker_id, str)
+        and bool(speaker_id.strip())
+        and speaker_id != UNKNOWN_SPEAKER_ID
+    )
 
 
 def _relabel(words: list[_Word], start_ms: int, end_ms: int, speaker_id: str) -> None:
@@ -87,19 +91,32 @@ def caller_words(events: list[Mapping[str, Any]]) -> list[_Word]:
                 floor = event
                 spans.append((0, onset, speaker))
                 _relabel(words, 0, onset, speaker)
-            elif floor.get("speaker_id") == speaker or onset <= int(floor.get("timestamp_ms") or 0):
+            elif floor.get("speaker_id") == speaker or onset <= int(
+                floor.get("timestamp_ms") or 0
+            ):
                 continue
             else:
-                previous = (int(floor.get("timestamp_ms") or 0), onset, str(floor.get("speaker_id")))
+                previous = (
+                    int(floor.get("timestamp_ms") or 0),
+                    onset,
+                    str(floor.get("speaker_id")),
+                )
                 floor = event
                 spans.append(previous)
                 _relabel(words, *previous)
             continue
-        if kind != RoomEventType.TRANSCRIPT.value or event.get("speaker_id") == AGENT_SPEAKER_ID:
+        if (
+            kind != RoomEventType.TRANSCRIPT.value
+            or event.get("speaker_id") == AGENT_SPEAKER_ID
+        ):
             continue
         speaker_id = event.get("speaker_id")
         for delta in event.get("deltas") or ():
-            if not isinstance(delta, Mapping) or not delta.get("text") or delta.get("final") is False:
+            if (
+                not isinstance(delta, Mapping)
+                or not delta.get("text")
+                or delta.get("final") is False
+            ):
                 continue
             start_ms = int(delta.get("start_ms") or 0)
             end_ms = int(delta.get("end_ms") or start_ms)
