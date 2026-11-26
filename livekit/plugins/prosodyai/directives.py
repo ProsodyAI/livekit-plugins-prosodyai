@@ -322,6 +322,7 @@ class LabelMetrics(_Wire):
 
 class Bundle(_Wire):
     id: str
+    organization: str = ""
     account: str
     status: BundleStatus
     directives: tuple[DirectiveRef, ...] = ()
@@ -336,6 +337,7 @@ class Bundle(_Wire):
 
 class BundleManifest(_Wire):
     bundle: str
+    organization: str = ""
     account: str
     engine: str = ""
     encoder: str = ""
