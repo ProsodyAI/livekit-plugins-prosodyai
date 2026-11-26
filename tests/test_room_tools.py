@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+
 from livekit import rtc
 from livekit.plugins.prosodyai.room_tools import RoomTools
 
