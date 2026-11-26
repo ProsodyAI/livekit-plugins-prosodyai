@@ -74,6 +74,12 @@ class RoomTools:
             await self.declare(identity)
 
     async def declare(self, identity: str) -> None:
+        participant = self._room.remote_participants.get(identity)
+        if (
+            participant is not None
+            and getattr(participant, "kind", None) == rtc.ParticipantKind.PARTICIPANT_KIND_SIP
+        ):
+            return
         try:
             raw = await self._room.local_participant.perform_rpc(
                 destination_identity=identity,
