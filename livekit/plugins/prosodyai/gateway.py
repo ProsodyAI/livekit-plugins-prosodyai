@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
+from opentelemetry.propagate import inject as inject_trace_context
 from pydantic import BaseModel
 from websockets.asyncio.client import ClientConnection, connect as ws_connect
 from websockets.exceptions import ConnectionClosed, InvalidHandshake
@@ -115,6 +116,9 @@ class GatewaySession:
         headers = {API_KEY_HEADER: self._api_key}
         if self._call_binding:
             headers[CALL_BINDING_HEADER] = self._call_binding
+        # The caller's W3C trace context, when a tracer is running: the
+        # gateway's span for this socket then joins the room's trace.
+        inject_trace_context(headers)
         return headers
 
     async def open(self) -> None:
