@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import secrets
 import time
 from typing import Annotated, Any, Literal, Optional, Protocol, Sequence, Union
 
@@ -80,6 +81,7 @@ class CallClaims(_Wire):
     seats: int = 0
     expires: int
     directed: bool = False
+    nonce: str = Field(default_factory=lambda: secrets.token_urlsafe(12))
 
     @property
     def tenant(self) -> str:
