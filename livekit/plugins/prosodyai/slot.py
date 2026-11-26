@@ -81,6 +81,17 @@ class CallClaims(_Wire):
     expires: int
     directed: bool = False
 
+    @property
+    def tenant(self) -> str:
+        return tenant_key(self.organization, self.account)
+
+
+def tenant_key(organization: str, account: str) -> str:
+    """The one key a tenant is known by in the slot: an account exists inside its
+    organization, so two organizations' accounts with the same name never share a
+    bundle, a share of the rows, or a seat."""
+    return f"{organization}/{account}"
+
 
 class SlotConfigure(_Wire):
     type: Literal[SlotControlType.CONFIGURE] = SlotControlType.CONFIGURE
@@ -313,6 +324,31 @@ def verify_call(token: str, public_key: bytes, now: Optional[float] = None) -> C
     if claims.expires <= (time.time() if now is None else now):
         raise TokenRejected("expired")
     return claims
+
+
+class TokenReplayed(TokenRejected):
+    pass
+
+
+class CallTokenLedger:
+    """Every call token admits one call. A token seen again inside its lifetime is a
+    replay and is refused; a token past its expiry is forgotten, since verify_call
+    refuses it on its own."""
+
+    def __init__(self) -> None:
+        self._seen: dict[str, int] = {}
+
+    def admit(self, token: str, claims: CallClaims, now: Optional[float] = None) -> None:
+        moment = time.time() if now is None else now
+        self._prune(moment)
+        signature = token.rsplit(".", 1)[-1]
+        if signature in self._seen:
+            raise TokenReplayed("token already admitted a call")
+        self._seen[signature] = claims.expires
+
+    def _prune(self, now: float) -> None:
+        for signature in [key for key, expires in self._seen.items() if expires <= now]:
+            del self._seen[signature]
 
 
 DirectiveAction = Union[Thought, ToolGate, Firing, DirectiveRead]
